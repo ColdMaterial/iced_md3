@@ -20,8 +20,13 @@ test:
 deny:
 	cargo deny check
 
+clippy:
+	cargo clippy --workspace --all-targets --all-features -- -D warnings
+	cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+
 check:
 	just fmt-check
+	just clippy
 	just test
 	just doc-no-all-features
 	just doc

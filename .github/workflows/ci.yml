@@ -41,3 +41,20 @@ jobs:
 
       - name: Run tests with default configuration
         run: cargo test --workspace --verbose
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Update Rust
+        run: rustup update stable && rustup default stable
+
+      - run: rustup component add clippy
+
+      - name: Run clippy with all features
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Run clippy with no default features
+        run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings

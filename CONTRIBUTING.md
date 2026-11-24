@@ -36,6 +36,16 @@ just fmt
 just fmt-check
 ```
 
+### Linting
+The project is linted with [Clippy](https://doc.rust-lang.org/clippy/) locally and in CI, where
+warnings are treated as errors, so fix warnings instead of ignoring them. Check with the `clippy`
+command:
+```bash
+just clippy
+```
+Clippy configuration lives in the `[lints]` table in `Cargo.toml`. Inline `#[allow]` attributes are
+kept to a minimum, and when one is truly needed, it carries a comment explaining why.
+
 ### Testing
 The project uses unit tests and [`cargo-deny`](https://github.com/EmbarkStudios/cargo-deny) for CI.
 
