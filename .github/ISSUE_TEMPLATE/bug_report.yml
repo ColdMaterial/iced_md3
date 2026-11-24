@@ -1,0 +1,92 @@
+name: Bug report
+description: Report unintended behavior
+title: "[BUG] Unintended behavior found in ..."
+labels: [bug]
+assignees: [tpaau]
+
+body:
+  - type: textarea
+    id: description
+    attributes:      
+      label: Description
+      description: Describe the bug
+      placeholder: A clear and concise description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:      
+      label: Reproduce
+      description: Steps to reproduce
+      placeholder: Steps to reproduce the behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:      
+      label: Expected
+      description: Expected behavior
+      placeholder: A clear and concise description of what you expected to happen.
+    validations:
+      required: true
+      
+  - type: textarea
+    id: actual
+    attributes:      
+      label: Actual
+      description: Actual behavior
+      placeholder: A clear and concise description of what actually happened
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:      
+      label: Version
+      description: Your version of Iced MD3
+      placeholder: commit f6362fd
+    validations:
+      required: true
+
+  - type: input
+    id: upstream
+    attributes:      
+      label: Upstream
+      description: Upstream confirmation
+      placeholder: Confirmation that you cannot reproduce the issue on the latest version of Iced MD3 from the main branch
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: duplicate
+    attributes:
+      label: Is there an existing issue for this?
+      description: Search the existing issues before submitting.
+      options:
+        - label: I have searched the existing issues.
+          required: true
+
+  - type: checkboxes
+    attributes:
+      label: Is this an Iced MD3 issue?
+      description: |
+        Iced MD3 implements its widgets on top of Iced, so not all unintended behavior is caused by this library.
+
+        Before filing an issue...
+
+        - If your application is crashing during startup or you are observing graphical glitches, there is a chance it may be caused by incompatible hardware or outdated graphics drivers. Please, make sure that is not the case here, and report such issues to Iced or its rendering backends directly.
+      options:
+        - label: The issue is indeed caused by Iced MD3.
+          required: true
+
+  - type: checkboxes
+    id: declaration
+    attributes:
+      label: Declaration
+      options:
+        - label: I agree to follow this project's [AI policy](https://github.com/ColdMaterial/iced_md3/blob/main/AI_POLICY.md).
+          required: true
+        - label: I agree to follow this project's [contribution policy](https://github.com/ColdMaterial/iced_md3/blob/main/CONTRIBUTING.md).
+          required: true
