@@ -83,7 +83,19 @@ of what each one holds. Refer to the documentation inside those modules for more
 Conventions for styling, naming, and ordering of parameters, among other things. You should
 generally stick to the conventions in Iced, unless stated otherwise here.
 
-- Stylable widgets take a dedicated `Style` struct with public fields. Styles provide a way (or ways) to be constructed by passing a `ColorScheme` implementor, which provides access to Material color tokens. Widgets should never take a `ColorScheme` implementor instead of a `Style` or hardcode color values.
+### Styling
+Iced has certain limitations in terms of styling, so styling is done by manually passing a
+`ColorScheme` implementor to widget constructors. Widgets never store that implementor, but rather
+construct a custom `Style` struct with public fields containing all the design tokens needed for the
+widget.
+
+- Widgets must **never** hardcode color tokens.
+- `Style` structs must provide one or more ways to be constructed with a `(ColorScheme + ?Sized)` implementor reference.
+- Widget constructors should take a `(ColorScheme + ?Sized)` implementor reference, and construct the style from it.
+- Widgets must provide constructor(s) where a custom `Style` is passed, instead of a theme.
+- Widgets must never store a `ColorScheme` dyn object, or a concrete `ColorScheme` implementor.
+
+### Code organization
 - Non-material utility widgets go to `advanced`.
 
 
