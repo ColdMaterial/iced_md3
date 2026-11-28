@@ -308,211 +308,100 @@ impl Palette {
     }
 }
 
-impl ColorScheme for Palette {
-    fn primary(&self) -> Color {
-        self.primary
-    }
+macro_rules! impl_color_scheme {
+    ($($name:ident),* $(,)?) => {
+        impl ColorScheme for Palette {
+            $(fn $name(&self) -> Color {
+                self.$name
+            })*
+        }
 
-    fn on_primary(&self) -> Color {
-        self.on_primary
-    }
+        impl ColorScheme for Theme {
+            $(fn $name(&self) -> Color {
+                self.current().$name
+            })*
+        }
+    };
+}
 
-    fn primary_container(&self) -> Color {
-        self.primary_container
-    }
-
-    fn on_primary_container(&self) -> Color {
-        self.on_primary_container
-    }
-
-    fn primary_fixed(&self) -> Color {
-        self.primary_fixed
-    }
-
-    fn on_primary_fixed(&self) -> Color {
-        self.on_primary_fixed
-    }
-
-    fn primary_fixed_dim(&self) -> Color {
-        self.primary_fixed_dim
-    }
-
-    fn on_primary_fixed_variant(&self) -> Color {
-        self.on_primary_fixed_variant
-    }
-
-    fn inverse_primary(&self) -> Color {
-        self.inverse_primary
-    }
-
-    fn secondary(&self) -> Color {
-        self.secondary
-    }
-
-    fn on_secondary(&self) -> Color {
-        self.on_secondary
-    }
-
-    fn secondary_container(&self) -> Color {
-        self.secondary_container
-    }
-
-    fn on_secondary_container(&self) -> Color {
-        self.on_secondary_container
-    }
-
-    fn secondary_fixed(&self) -> Color {
-        self.secondary_fixed
-    }
-
-    fn on_secondary_fixed(&self) -> Color {
-        self.on_secondary_fixed
-    }
-
-    fn secondary_fixed_dim(&self) -> Color {
-        self.secondary_fixed_dim
-    }
-
-    fn on_secondary_fixed_variant(&self) -> Color {
-        self.on_secondary_fixed_variant
-    }
-
-    fn tertiary(&self) -> Color {
-        self.tertiary
-    }
-
-    fn on_tertiary(&self) -> Color {
-        self.on_tertiary
-    }
-
-    fn tertiary_container(&self) -> Color {
-        self.tertiary_container
-    }
-
-    fn on_tertiary_container(&self) -> Color {
-        self.on_tertiary_container
-    }
-
-    fn tertiary_fixed(&self) -> Color {
-        self.tertiary_fixed
-    }
-
-    fn on_tertiary_fixed(&self) -> Color {
-        self.on_tertiary_fixed
-    }
-
-    fn tertiary_fixed_dim(&self) -> Color {
-        self.tertiary_fixed_dim
-    }
-
-    fn on_tertiary_fixed_variant(&self) -> Color {
-        self.on_tertiary_fixed_variant
-    }
-
-    fn error(&self) -> Color {
-        self.error
-    }
-
-    fn on_error(&self) -> Color {
-        self.on_error
-    }
-
-    fn error_container(&self) -> Color {
-        self.error_container
-    }
-
-    fn on_error_container(&self) -> Color {
-        self.on_error_container
-    }
-
-    fn surface(&self) -> Color {
-        self.surface
-    }
-
-    fn on_surface(&self) -> Color {
-        self.on_surface
-    }
-
-    fn surface_variant(&self) -> Color {
-        self.surface_variant
-    }
-
-    fn on_surface_variant(&self) -> Color {
-        self.on_surface_variant
-    }
-
-    fn surface_container_highest(&self) -> Color {
-        self.surface_container_highest
-    }
-
-    fn surface_container_high(&self) -> Color {
-        self.surface_container_high
-    }
-
-    fn surface_container(&self) -> Color {
-        self.surface_container
-    }
-
-    fn surface_container_low(&self) -> Color {
-        self.surface_container_low
-    }
-
-    fn surface_container_lowest(&self) -> Color {
-        self.surface_container_lowest
-    }
-
-    fn inverse_surface(&self) -> Color {
-        self.inverse_surface
-    }
-
-    fn inverse_on_surface(&self) -> Color {
-        self.inverse_on_surface
-    }
-
-    fn background(&self) -> Color {
-        self.background
-    }
-
-    fn on_background(&self) -> Color {
-        self.on_background
-    }
-
-    fn surface_bright(&self) -> Color {
-        self.surface_bright
-    }
-
-    fn surface_dim(&self) -> Color {
-        self.surface_dim
-    }
-
-    fn scrim(&self) -> Color {
-        self.scrim
-    }
-
-    fn shadow(&self) -> Color {
-        self.shadow
-    }
-
-    fn outline(&self) -> Color {
-        self.outline
-    }
-
-    fn outline_variant(&self) -> Color {
-        self.outline_variant
-    }
+impl_color_scheme! {
+    primary,
+    on_primary,
+    primary_container,
+    on_primary_container,
+    primary_fixed,
+    on_primary_fixed,
+    primary_fixed_dim,
+    on_primary_fixed_variant,
+    inverse_primary,
+    secondary,
+    on_secondary,
+    secondary_container,
+    on_secondary_container,
+    secondary_fixed,
+    on_secondary_fixed,
+    secondary_fixed_dim,
+    on_secondary_fixed_variant,
+    tertiary,
+    on_tertiary,
+    tertiary_container,
+    on_tertiary_container,
+    tertiary_fixed,
+    on_tertiary_fixed,
+    tertiary_fixed_dim,
+    on_tertiary_fixed_variant,
+    error,
+    on_error,
+    error_container,
+    on_error_container,
+    surface,
+    on_surface,
+    surface_variant,
+    on_surface_variant,
+    surface_container_highest,
+    surface_container_high,
+    surface_container,
+    surface_container_low,
+    surface_container_lowest,
+    inverse_surface,
+    inverse_on_surface,
+    background,
+    on_background,
+    surface_bright,
+    surface_dim,
+    scrim,
+    shadow,
+    outline,
+    outline_variant,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Mode {
     #[default]
+    System,
     Light,
     Dark,
+}
+
+impl Mode {
+    pub fn is_system(self) -> bool {
+        matches!(self, Self::System)
+    }
+
+    pub fn resolve(self, system: Mode) -> Mode {
+        match (self, system) {
+            (Mode::System, Mode::Dark) => Mode::Dark,
+            (Mode::System, Mode::Light | Mode::System) => Mode::Light,
+            (mode, _) => mode,
+        }
+    }
 }
 
 impl From<iced::theme::Mode> for Mode {
     fn from(value: iced::theme::Mode) -> Self {
         match value {
-            iced::theme::Mode::None | iced::theme::Mode::Light => Self::Light,
+            iced::theme::Mode::None => Self::System,
+            iced::theme::Mode::Light => Self::Light,
             iced::theme::Mode::Dark => Self::Dark,
         }
     }
@@ -523,14 +412,19 @@ pub struct Theme {
     pub dark: Palette,
     pub light: Palette,
     pub mode: Mode,
+    pub system_mode: Mode,
 }
 
 impl Theme {
     pub fn current(&self) -> &Palette {
-        match self.mode {
-            Mode::Light => &self.light,
+        match self.resolved_mode() {
+            Mode::Light | Mode::System => &self.light,
             Mode::Dark => &self.dark,
         }
+    }
+
+    pub fn resolved_mode(&self) -> Mode {
+        self.mode.resolve(self.system_mode)
     }
 
     pub fn default(mode: Mode) -> Self {
@@ -538,200 +432,48 @@ impl Theme {
             dark: Palette::default_dark(),
             light: Palette::default_light(),
             mode,
+            system_mode: Mode::Light,
         }
     }
 }
 
-impl ColorScheme for Theme {
-    fn primary(&self) -> Color {
-        self.current().primary
+impl iced_widget::scrollable::Catalog for Theme {
+    type Class<'a> = iced_widget::scrollable::StyleFn<'a, Self>;
+
+    fn default<'a>() -> Self::Class<'a> {
+        Box::new(|_theme, _status| iced_widget::scrollable::Style {
+            container: iced::widget::container::Style::default(),
+            vertical_rail: iced_widget::scrollable::Rail {
+                background: None,
+                border: iced::Border::default(),
+                scroller: iced_widget::scrollable::Scroller {
+                    background: iced::Background::Color(iced::Color::TRANSPARENT),
+                    border: iced::Border::default(),
+                },
+            },
+            horizontal_rail: iced_widget::scrollable::Rail {
+                background: None,
+                border: iced::Border::default(),
+                scroller: iced_widget::scrollable::Scroller {
+                    background: iced::Background::Color(iced::Color::TRANSPARENT),
+                    border: iced::Border::default(),
+                },
+            },
+            gap: None,
+            auto_scroll: iced_widget::scrollable::AutoScroll {
+                background: iced::Background::Color(iced::Color::TRANSPARENT),
+                border: iced::Border::default(),
+                shadow: iced::Shadow::default(),
+                icon: iced::Color::TRANSPARENT,
+            },
+        })
     }
 
-    fn on_primary(&self) -> Color {
-        self.current().on_primary
-    }
-
-    fn primary_container(&self) -> Color {
-        self.current().primary_container
-    }
-
-    fn on_primary_container(&self) -> Color {
-        self.current().on_primary_container
-    }
-
-    fn primary_fixed(&self) -> Color {
-        self.current().primary_fixed
-    }
-
-    fn on_primary_fixed(&self) -> Color {
-        self.current().on_primary_fixed
-    }
-
-    fn primary_fixed_dim(&self) -> Color {
-        self.current().primary_fixed_dim
-    }
-
-    fn on_primary_fixed_variant(&self) -> Color {
-        self.current().on_primary_fixed_variant
-    }
-
-    fn inverse_primary(&self) -> Color {
-        self.current().inverse_primary
-    }
-
-    fn secondary(&self) -> Color {
-        self.current().secondary
-    }
-
-    fn on_secondary(&self) -> Color {
-        self.current().on_secondary
-    }
-
-    fn secondary_container(&self) -> Color {
-        self.current().secondary_container
-    }
-
-    fn on_secondary_container(&self) -> Color {
-        self.current().on_secondary_container
-    }
-
-    fn secondary_fixed(&self) -> Color {
-        self.current().secondary_fixed
-    }
-
-    fn on_secondary_fixed(&self) -> Color {
-        self.current().on_secondary_fixed
-    }
-
-    fn secondary_fixed_dim(&self) -> Color {
-        self.current().secondary_fixed_dim
-    }
-
-    fn on_secondary_fixed_variant(&self) -> Color {
-        self.current().on_secondary_fixed_variant
-    }
-
-    fn tertiary(&self) -> Color {
-        self.current().tertiary
-    }
-
-    fn on_tertiary(&self) -> Color {
-        self.current().on_tertiary
-    }
-
-    fn tertiary_container(&self) -> Color {
-        self.current().tertiary_container
-    }
-
-    fn on_tertiary_container(&self) -> Color {
-        self.current().on_tertiary_container
-    }
-
-    fn tertiary_fixed(&self) -> Color {
-        self.current().tertiary_fixed
-    }
-
-    fn on_tertiary_fixed(&self) -> Color {
-        self.current().on_tertiary_fixed
-    }
-
-    fn tertiary_fixed_dim(&self) -> Color {
-        self.current().tertiary_fixed_dim
-    }
-
-    fn on_tertiary_fixed_variant(&self) -> Color {
-        self.current().on_tertiary_fixed_variant
-    }
-
-    fn error(&self) -> Color {
-        self.current().error
-    }
-
-    fn on_error(&self) -> Color {
-        self.current().on_error
-    }
-
-    fn error_container(&self) -> Color {
-        self.current().error_container
-    }
-
-    fn on_error_container(&self) -> Color {
-        self.current().on_error_container
-    }
-
-    fn surface(&self) -> Color {
-        self.current().surface
-    }
-
-    fn on_surface(&self) -> Color {
-        self.current().on_surface
-    }
-
-    fn surface_variant(&self) -> Color {
-        self.current().surface_variant
-    }
-
-    fn on_surface_variant(&self) -> Color {
-        self.current().on_surface_variant
-    }
-
-    fn surface_container_highest(&self) -> Color {
-        self.current().surface_container_highest
-    }
-
-    fn surface_container_high(&self) -> Color {
-        self.current().surface_container_high
-    }
-
-    fn surface_container(&self) -> Color {
-        self.current().surface_container
-    }
-
-    fn surface_container_low(&self) -> Color {
-        self.current().surface_container_low
-    }
-
-    fn surface_container_lowest(&self) -> Color {
-        self.current().surface_container_lowest
-    }
-
-    fn inverse_surface(&self) -> Color {
-        self.current().inverse_surface
-    }
-
-    fn inverse_on_surface(&self) -> Color {
-        self.current().inverse_on_surface
-    }
-
-    fn background(&self) -> Color {
-        self.current().background
-    }
-
-    fn on_background(&self) -> Color {
-        self.current().on_background
-    }
-
-    fn surface_bright(&self) -> Color {
-        self.current().surface_bright
-    }
-
-    fn surface_dim(&self) -> Color {
-        self.current().surface_dim
-    }
-
-    fn scrim(&self) -> Color {
-        self.current().scrim
-    }
-
-    fn shadow(&self) -> Color {
-        self.current().shadow
-    }
-
-    fn outline(&self) -> Color {
-        self.current().outline
-    }
-
-    fn outline_variant(&self) -> Color {
-        self.current().outline_variant
+    fn style(
+        &self,
+        class: &Self::Class<'_>,
+        status: iced_widget::scrollable::Status,
+    ) -> iced_widget::scrollable::Style {
+        class(self, status)
     }
 }

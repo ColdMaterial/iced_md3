@@ -1,5 +1,5 @@
 //! Standard button groups organize [`Button`](crate::widget::button::Button) widgets in a row and affect the size of pressed buttons.
-use std::time::Instant;
+use iced::time::Instant;
 
 use iced::{
     Element, Length, Pixels, Point, Size, Vector,
@@ -102,12 +102,7 @@ where
         self
     }
 
-    /// Sets the motion scheme for the spring used for animating button sizes, if `Some`.
-    #[must_use]
-    pub fn motion_scheme_maybe(mut self, scheme: Option<motion::Scheme>) -> Self {
-        self.motion_scheme = scheme;
-        self
-    }
+    crate::macros::maybe_assign!(motion_scheme_maybe, motion_scheme, Option<motion::Scheme>);
 
     /// Sets the spring used for animating button sizes.
     #[must_use]
@@ -116,12 +111,7 @@ where
         self
     }
 
-    /// Sets the spring used for animating button sizes, if `Some`.
-    #[must_use]
-    pub fn expansion_spring_maybe(mut self, spring: Option<Spring>) -> Self {
-        self.expansion_spring = spring;
-        self
-    }
+    crate::macros::maybe_assign!(expansion_spring_maybe, expansion_spring, Option<Spring>);
 
     /// Sets the spacing between buttons in the group.
     #[must_use]
@@ -550,15 +540,12 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer> From<ButtonGroup<'a, Message, Theme, Renderer>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    Message: 'a + Clone,
-    Theme: 'a,
-    Renderer: 'a + iced::advanced::text::Renderer + iced::advanced::svg::Renderer,
-    Renderer::Font: From<iced::Font>,
-{
-    fn from(value: ButtonGroup<'a, Message, Theme, Renderer>) -> Self {
-        Element::new(value)
-    }
-}
+crate::macros::impl_element_from!(
+    ['a, Message, Theme, Renderer]
+    ButtonGroup<'a, Message, Theme, Renderer> => Element<'a, Message, Theme, Renderer>
+    where
+        Message: 'a + Clone,
+        Theme: 'a,
+        Renderer: 'a + iced::advanced::text::Renderer + iced::advanced::svg::Renderer,
+        Renderer::Font: From<iced::Font>,
+);

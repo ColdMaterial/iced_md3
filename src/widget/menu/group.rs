@@ -1,14 +1,12 @@
 use iced::{
     Border, Element, Font, Length, Pixels, Point, Size, Vector,
-    advanced::{
-        Layout, Widget, layout, mouse, overlay,
-        renderer::Quad,
-        text::{self, Paragraph},
-        widget::Tree,
-    },
+    advanced::{Layout, Widget, layout, mouse, overlay, renderer::Quad, text, widget::Tree},
 };
 
-use crate::widget::menu::{self, Style};
+use crate::widget::{
+    internal::text::CachedParagraph,
+    menu::{self, Style},
+};
 
 const LABEL_CENTER: f32 =
     (menu::constants::GROUP_LABEL_CELL_HEIGHT.0 - menu::constants::GROUP_LABEL_LINE_HEIGHT.0) / 2.0;
@@ -26,7 +24,7 @@ where
     // Cache
     // If the element is `None`, that means that it's a spacer
     pub items: Vec<Option<Element<'a, Message, Theme, Renderer>>>,
-    pub label_paragraph: Option<Renderer::Paragraph>,
+    pub label_paragraph: CachedParagraph<Font, Renderer::Paragraph>,
 }
 
 impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
@@ -58,19 +56,28 @@ where
         if let Some(label) = self.label.as_ref() {
             let max_width = max_width - menu::constants::GROUP_LABEL_LEFT_OFFSET.0;
             let limits = limits.max_width(max_width);
-            let paragraph = <Renderer as iced::advanced::text::Renderer>::Paragraph::with_text(
-                iced::advanced::text::Text {
-                    content: label,
-                    bounds: limits.max(),
-                    size: menu::constants::GROUP_LABEL_FONT_SIZE,
-                    line_height: text::LineHeight::Absolute(
-                        menu::constants::GROUP_LABEL_LINE_HEIGHT,
-                    ),
-                    font: self.label_font.unwrap_or_else(|| renderer.default_font()),
-                    shaping: text::Shaping::Advanced,
-                    wrapping: text::Wrapping::None,
-                    align_x: text::Alignment::Left,
-                    align_y: iced::alignment::Vertical::Top,
+            let size = menu::constants::GROUP_LABEL_FONT_SIZE;
+            let line_height = text::LineHeight::Absolute(menu::constants::GROUP_LABEL_LINE_HEIGHT);
+            let font = self.label_font;
+            let bounds = limits.max();
+
+            self.label_paragraph.update(
+                label,
+                bounds,
+                size,
+                line_height,
+                font,
+                iced::alignment::Vertical::Top,
+                || {
+                    crate::widget::internal::text::paragraph(
+                        renderer,
+                        label,
+                        bounds,
+                        size,
+                        line_height,
+                        font,
+                        iced::alignment::Vertical::Top,
+                    )
                 },
             );
 
@@ -78,8 +85,8 @@ where
                 max_width,
                 menu::constants::GROUP_LABEL_CELL_HEIGHT.0,
             )));
-
-            self.label_paragraph = Some(paragraph);
+        } else {
+            self.label_paragraph.clear();
         }
 
         let mut tree_index = 0;
@@ -139,7 +146,7 @@ where
         );
 
         let mut children = layout.children();
-        if let Some(paragraph) = &self.label_paragraph {
+        if let Some(paragraph) = self.label_paragraph.as_ref() {
             let bounds = children.next().unwrap().bounds();
             let position = bounds.position()
                 + Vector::new(menu::constants::GROUP_LABEL_LEFT_OFFSET.0, LABEL_CENTER);
@@ -185,7 +192,7 @@ where
         viewport: &iced::Rectangle,
     ) {
         let mut layout_children = layout.children();
-        if self.label_paragraph.is_some() {
+        if self.label.is_some() {
             layout_children.next();
         }
         let mut tree_children = tree.children.iter_mut();
@@ -215,7 +222,7 @@ where
         renderer: &Renderer,
     ) -> mouse::Interaction {
         let mut children_layouts = layout.children();
-        if self.label_paragraph.is_some() {
+        if self.label.is_some() {
             children_layouts.next();
         }
         let mut tree_iter = tree.children.iter();
@@ -247,7 +254,7 @@ where
         viewport: &iced::Rectangle,
         translation: iced::Vector,
     ) -> Option<iced::advanced::overlay::Element<'b, Message, Theme, Renderer>> {
-        let layout_index_offset = self.label_paragraph.is_some() as usize;
+        let layout_index_offset = self.label.is_some() as usize;
         let mut overlays = Vec::new();
         let mut children_iter = tree.children.iter_mut();
 
@@ -269,14 +276,11 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer> From<GroupElement<'a, Message, Theme, Renderer>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    Message: 'a + Clone,
-    Theme: 'a,
-    Renderer: 'a + iced::advanced::text::Renderer<Font = iced::Font>,
-{
-    fn from(value: GroupElement<'a, Message, Theme, Renderer>) -> Self {
-        Element::new(value)
-    }
-}
+crate::macros::impl_element_from!(
+    ['a, Message, Theme, Renderer]
+    GroupElement<'a, Message, Theme, Renderer> => Element<'a, Message, Theme, Renderer>
+    where
+        Message: 'a + Clone,
+        Theme: 'a,
+        Renderer: 'a + iced::advanced::text::Renderer<Font = iced::Font>,
+);

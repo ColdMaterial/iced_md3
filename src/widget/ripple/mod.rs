@@ -10,6 +10,8 @@
 //! - [`view`](mod@view): [`Model`] to [`Scene`]
 //! - [`render`]: draws a [`Scene`]
 //! - [`binding`]: translates iced events, see [`Ripple`]
+//! - [`overlay`]: a viewport-clipped state layer for widgets that draw their
+//!   ripple above the widget tree
 //!
 //! Intentional differences from the official implementation:
 //!
@@ -24,11 +26,13 @@ mod clip;
 mod constant;
 mod message;
 mod model;
+mod overlay;
 mod render;
 mod update;
 mod view;
 
 pub use binding::Ripple;
+pub(crate) use overlay::{state_layer_overlay, visible_clip};
 
 #[cfg(test)]
 mod tests;

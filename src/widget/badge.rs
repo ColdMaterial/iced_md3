@@ -21,6 +21,8 @@ where
 {
     badge_bounds: Option<Rectangle>,
     paragraph: Option<P>,
+    /// Text the cached `paragraph` was shaped from.
+    label: Option<String>,
 }
 
 impl<P> State<P>
@@ -31,6 +33,7 @@ where
         Self {
             badge_bounds: None,
             paragraph: None,
+            label: None,
         }
     }
 }
@@ -103,11 +106,7 @@ where
         self
     }
 
-    #[must_use]
-    pub fn label_font_maybe(mut self, font: Option<Renderer::Font>) -> Self {
-        self.label_font = font;
-        self
-    }
+    crate::macros::maybe_assign!(label_font_maybe, label_font, Option<Renderer::Font>);
 
     #[must_use]
     pub fn bounds_mode(mut self, mode: BoundsMode) -> Self {
@@ -115,13 +114,7 @@ where
         self
     }
 
-    #[must_use]
-    pub fn bounds_mode_maybe(self, mode_maybe: Option<BoundsMode>) -> Self {
-        match mode_maybe {
-            Some(mode) => self.bounds_mode(mode),
-            None => self,
-        }
-    }
+    crate::macros::maybe_delegate!(bounds_mode_maybe, bounds_mode, Option<BoundsMode>);
 }
 
 impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
@@ -167,17 +160,20 @@ where
 
                 let state = tree.state.downcast_mut::<State<Renderer::Paragraph>>();
 
-                let paragraph = <Renderer as text::Renderer>::Paragraph::with_text(text::Text {
-                    content: label,
-                    bounds: Size::INFINITE,
-                    size: Pixels(LABEL_FONT_SIZE),
-                    line_height: text::LineHeight::Relative(1.0),
-                    font: self.label_font.unwrap_or(renderer.default_font()),
-                    shaping: text::Shaping::Advanced,
-                    wrapping: text::Wrapping::None,
-                    align_x: text::Alignment::Left,
-                    align_y: iced::alignment::Vertical::Top,
-                });
+                if state.paragraph.is_none() || state.label.as_deref() != Some(label.as_ref()) {
+                    state.paragraph = Some(super::internal::text::paragraph(
+                        renderer,
+                        label,
+                        Size::INFINITE,
+                        Pixels(LABEL_FONT_SIZE),
+                        text::LineHeight::Relative(1.0),
+                        self.label_font,
+                        iced::alignment::Vertical::Top,
+                    ));
+                    state.label = Some(label.as_ref().to_owned());
+                }
+
+                let paragraph = state.paragraph.as_ref().unwrap();
 
                 let width = (paragraph.min_bounds().width + 2.0 * BADGE_CONTENT_PADDING)
                     .max(LARGE_LABEL_SIZE);
@@ -197,7 +193,6 @@ where
                     height: LARGE_LABEL_SIZE,
                 };
 
-                state.paragraph = Some(paragraph);
                 state.badge_bounds = Some(badge);
 
                 match self.bounds_mode {
@@ -255,32 +250,33 @@ where
             let paragraph = state.paragraph.as_ref().unwrap();
             let badge_bounds = state.badge_bounds.unwrap();
 
-            renderer.with_layer(bounds, |renderer| {
-                renderer.fill_quad(
-                    iced::advanced::renderer::Quad {
-                        bounds: Rectangle {
-                            x: bounds.x + badge_bounds.x,
-                            y: bounds.y + badge_bounds.y,
-                            width: badge_bounds.width,
-                            height: badge_bounds.height,
-                        },
-                        border: self.style.container_border,
-                        ..Default::default()
+            // Draw directly instead of inside a nested layer: a layer is only
+            // clipped to its own bounds, so `with_layer` would let the badge
+            // escape the clip of an enclosing scrollable.
+            renderer.fill_quad(
+                iced::advanced::renderer::Quad {
+                    bounds: Rectangle {
+                        x: bounds.x + badge_bounds.x,
+                        y: bounds.y + badge_bounds.y,
+                        width: badge_bounds.width,
+                        height: badge_bounds.height,
                     },
-                    self.style.container_color,
-                );
+                    border: self.style.container_border,
+                    ..Default::default()
+                },
+                self.style.container_color,
+            );
 
-                renderer.fill_paragraph(
-                    paragraph,
-                    bounds.position()
-                        + Vector {
-                            x: badge_bounds.x + BADGE_CONTENT_PADDING,
-                            y: badge_bounds.y + (badge_bounds.height - LABEL_FONT_SIZE) / 2.0,
-                        },
-                    self.style.label_color,
-                    bounds,
-                );
-            });
+            renderer.fill_paragraph(
+                paragraph,
+                bounds.position()
+                    + Vector {
+                        x: badge_bounds.x + BADGE_CONTENT_PADDING,
+                        y: badge_bounds.y + (badge_bounds.height - LABEL_FONT_SIZE) / 2.0,
+                    },
+                self.style.label_color,
+                bounds,
+            );
         } else {
             let size = 6.0;
             renderer.fill_quad(
@@ -300,14 +296,8 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer> From<Badge<'a, Message, Theme, Renderer>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    Message: 'a,
-    Theme: 'a,
-    Renderer: 'a + iced::advanced::text::Renderer,
-{
-    fn from(value: Badge<'a, Message, Theme, Renderer>) -> Self {
-        Element::new(value)
-    }
-}
+crate::macros::impl_element_from!(
+    ['a, Message, Theme, Renderer]
+    Badge<'a, Message, Theme, Renderer> => Element<'a, Message, Theme, Renderer>
+    where Message: 'a, Theme: 'a, Renderer: 'a + iced::advanced::text::Renderer,
+);

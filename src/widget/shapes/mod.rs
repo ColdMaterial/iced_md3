@@ -1,6 +1,6 @@
 //! The M3 shape system includes original shapes, a corner radius scale, and built-in shape morphing
 
-use std::time::Instant;
+use iced::time::Instant;
 
 use iced::{Element, Point, Size};
 use iced_widget::{
@@ -160,14 +160,7 @@ where
         self
     }
 
-    /// Sets the transition spring used for shape morphing, if `Some`.
-    ///
-    /// If `None`, the shape won't morph.
-    #[must_use]
-    pub fn transition_spring_maybe(mut self, spring: Option<Spring>) -> Self {
-        self.spring = spring;
-        self
-    }
+    crate::macros::maybe_assign!(transition_spring_maybe, spring, Option<Spring>);
 
     /// Sets the [overshoot margin](OvershootMargin) of the shape.
     #[must_use]

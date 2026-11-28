@@ -3,6 +3,7 @@ name = "iced_m3"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+repository = "https://github.com/ColdMaterial/iced_md3"
 
 [package.metadata.docs.rs]
 rustdoc-args = [ "--cfg", "docsrs" ]
@@ -23,6 +24,8 @@ advanced = []
 pub-internal-const = []
 # Makes the default motion scheme expressive
 expressive-defaults = []
+# Re-exports the library's built-in SVG icons
+icons = []
 # Material Shapes - requires a dependency so it's optional
 shapes = [ "dep:polymorpher", "iced/canvas" ]
 

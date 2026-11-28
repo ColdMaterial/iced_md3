@@ -1,6 +1,6 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use iced::{Point, Size};
+use iced::{Point, Size, time::Instant};
 
 use super::constant::*;
 use crate::animation::standard;

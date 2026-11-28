@@ -1,5 +1,9 @@
 pub mod motion;
 
+pub(crate) fn lerp(from: f32, to: f32, t: f32) -> f32 {
+    from + (to - from) * t
+}
+
 pub(crate) mod constants {
     pub const EMPHASIZED_ACCELERATE: (f32, f32, f32, f32) = (0.3, 0.0, 0.8, 0.15);
     pub const EMPHASIZED_DECELERATE: (f32, f32, f32, f32) = (0.05, 0.7, 0.1, 1.0);
@@ -10,7 +14,7 @@ pub(crate) mod constants {
 
 #[cfg(feature = "pub-internal-const")]
 pub use constants::*;
-use iced::{Color, Radians, border::Radius};
+use iced::{Color, Point, Radians, border::Radius};
 
 use crate::style::mix_colors;
 
@@ -171,6 +175,15 @@ pub trait Interpolable {
 impl Interpolable for Color {
     fn interpolate(self, other: Self, t: f32) -> Self {
         mix_colors(self, other, t)
+    }
+}
+
+impl Interpolable for Point {
+    fn interpolate(self, other: Self, t: f32) -> Self {
+        Self::new(
+            (self.x * (1.0 - t) + other.x * t).round(),
+            (self.y * (1.0 - t) + other.y * t).round(),
+        )
     }
 }
 

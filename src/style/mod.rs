@@ -1,7 +1,5 @@
-mod scrollable;
 mod shadow;
 
-pub use scrollable::*;
 pub use shadow::*;
 
 use crate::animation::Interpolable;
@@ -85,5 +83,29 @@ pub fn mix_colors_srgb(a: Color, b: Color, t: f32) -> Color {
         g: a.g * (1.0 - t) + b.g * t,
         b: a.b * (1.0 - t) + b.b * t,
         a: a.a * (1.0 - t) + b.a * t,
+    }
+}
+
+/// Cross-fades two colors through their visible (alpha-weighted) color.
+///
+/// Interpolating the raw RGB towards transparent black darkens the result and
+/// makes fades towards a target hue look muddy. Weighting the RGB by each
+/// endpoint's alpha keeps the hue of the visible color, so fading a fill in or
+/// out only changes its opacity.
+pub fn crossfade_color(a: Color, b: Color, t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    let weight_a = a.a * (1.0 - t);
+    let weight_b = b.a * t;
+    let alpha = weight_a + weight_b;
+
+    if alpha <= f32::EPSILON {
+        return Color::TRANSPARENT;
+    }
+
+    Color {
+        r: (a.r * weight_a + b.r * weight_b) / alpha,
+        g: (a.g * weight_a + b.g * weight_b) / alpha,
+        b: (a.b * weight_a + b.b * weight_b) / alpha,
+        a: alpha,
     }
 }

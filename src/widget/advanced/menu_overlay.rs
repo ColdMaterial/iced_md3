@@ -114,7 +114,47 @@ impl Placement {
         }
     }
 
-    fn offset(&self, bounds: &Rectangle, overlay_bounds: &Rectangle) -> Vector {
+    #[must_use]
+    pub(crate) fn resolve(
+        self,
+        anchor_bounds: &Rectangle,
+        overlay_bounds: &Rectangle,
+        viewport: Size,
+    ) -> Self {
+        let mut placement = self;
+
+        let offset = placement.offset(anchor_bounds, overlay_bounds);
+        let over_right = overlay_bounds.width + overlay_bounds.x + offset.x > viewport.width;
+        let over_left = overlay_bounds.x + offset.x < 0.0;
+
+        let flipped = placement.flip_x();
+        let flipped_offset = flipped.offset(anchor_bounds, overlay_bounds);
+        let flipped_fits_right =
+            overlay_bounds.width + overlay_bounds.x + flipped_offset.x < viewport.width;
+        let flipped_fits_left = overlay_bounds.x + flipped_offset.x > 0.0;
+
+        if (over_right && flipped_fits_left) || (over_left && flipped_fits_right) {
+            placement = flipped;
+        }
+
+        let offset = placement.offset(anchor_bounds, overlay_bounds);
+        let over_top = overlay_bounds.y + offset.y < 0.0;
+        let over_bottom = overlay_bounds.height + overlay_bounds.y + offset.y > viewport.height;
+
+        let flipped = placement.flip_y();
+        let flipped_offset = flipped.offset(anchor_bounds, overlay_bounds);
+        let flipped_fits_top = overlay_bounds.y + flipped_offset.y > 0.0;
+        let flipped_fits_bottom =
+            overlay_bounds.height + overlay_bounds.y + flipped_offset.y < viewport.height;
+
+        if (over_top && flipped_fits_bottom) || (over_bottom && flipped_fits_top) {
+            placement = flipped;
+        }
+
+        placement
+    }
+
+    pub(crate) fn offset(&self, bounds: &Rectangle, overlay_bounds: &Rectangle) -> Vector {
         match self {
             Placement::TopLeft { padding } => Vector::new(
                 -overlay_bounds.width + bounds.width,
@@ -431,17 +471,11 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer> From<MenuOverlay<'a, Message, Theme, Renderer>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    Message: 'a + Clone,
-    Theme: 'a,
-    Renderer: 'a + iced::advanced::Renderer,
-{
-    fn from(value: MenuOverlay<'a, Message, Theme, Renderer>) -> Self {
-        Element::new(value)
-    }
-}
+crate::macros::impl_element_from!(
+    ['a, Message, Theme, Renderer]
+    MenuOverlay<'a, Message, Theme, Renderer> => Element<'a, Message, Theme, Renderer>
+    where Message: 'a + Clone, Theme: 'a, Renderer: 'a + iced::advanced::Renderer,
+);
 
 struct Overlay<'a, 'b, Message, Theme, Renderer> {
     surface: &'b mut Element<'a, Message, Theme, Renderer>,
@@ -471,33 +505,9 @@ where
             .move_to(position);
 
         let overlay_bounds = layout.bounds();
-        let offset = self.placement.offset(&self.anchor_bounds, &overlay_bounds);
-
-        let over_right = overlay_bounds.width + overlay_bounds.x + offset.x > bounds.width;
-        let over_left = overlay_bounds.x + offset.x < 0.0;
-
-        let placement_flipped = self.placement.flip_x();
-        let offset_flipped = placement_flipped.offset(&self.anchor_bounds, &overlay_bounds);
-        let flipped_fits_right =
-            overlay_bounds.width + overlay_bounds.x + offset_flipped.x < bounds.width;
-        let flipped_fits_left = overlay_bounds.x + offset_flipped.x > 0.0;
-
-        if (over_right && flipped_fits_left) || (over_left && flipped_fits_right) {
-            self.placement = placement_flipped;
-        }
-
-        let over_top = overlay_bounds.y + offset.y < 0.0;
-        let over_bottom = overlay_bounds.height + overlay_bounds.y + offset.y > bounds.height;
-
-        let placement_flipped = self.placement.flip_y();
-        let offset_flipped = placement_flipped.offset(&self.anchor_bounds, &overlay_bounds);
-        let flipped_fits_top = overlay_bounds.y + offset_flipped.y > 0.0;
-        let flipped_fits_bottom =
-            overlay_bounds.height + overlay_bounds.y + offset_flipped.y < bounds.height;
-
-        if (over_top && flipped_fits_bottom) || (over_bottom && flipped_fits_top) {
-            self.placement = placement_flipped;
-        }
+        self.placement = self
+            .placement
+            .resolve(&self.anchor_bounds, &overlay_bounds, bounds);
 
         // TODO: I think we can avoid laying this out twice?
         self.surface

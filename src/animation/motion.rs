@@ -18,7 +18,7 @@ pub(crate) mod constants {
     pub const SLOW_EFFECTS_EXPRESSIVE: Spring = Spring::new(1.0, 800.0);
 }
 
-use std::time::Instant;
+use iced::time::Instant;
 
 #[cfg(feature = "pub-internal-const")]
 pub use constants::*;
@@ -40,45 +40,106 @@ pub enum Scheme {
     Standard,
 }
 
-pub fn fast_spatial(scheme: Scheme) -> Spring {
-    match scheme {
-        Scheme::Expressive => constants::FAST_SPATIAL_EXPRESSIVE,
-        Scheme::Standard => constants::FAST_SPATIAL_STANDARD,
+impl Scheme {
+    const fn ordinal(self) -> usize {
+        match self {
+            Scheme::Expressive => 0,
+            Scheme::Standard => 1,
+        }
     }
+}
+
+const SPATIAL: [[Spring; 2]; 3] = [
+    [
+        constants::FAST_SPATIAL_EXPRESSIVE,
+        constants::FAST_SPATIAL_STANDARD,
+    ],
+    [
+        constants::DEFAULT_SPATIAL_EXPRESSIVE,
+        constants::DEFAULT_SPATIAL_STANDARD,
+    ],
+    [
+        constants::SLOW_SPATIAL_EXPRESSIVE,
+        constants::SLOW_SPATIAL_STANDARD,
+    ],
+];
+
+const EFFECTS: [[Spring; 2]; 3] = [
+    [
+        constants::FAST_EFFECTS_EXPRESSIVE,
+        constants::FAST_EFFECTS_STANDARD,
+    ],
+    [
+        constants::DEFAULT_EFFECTS_EXPRESSIVE,
+        constants::DEFAULT_EFFECTS_STANDARD,
+    ],
+    [
+        constants::SLOW_EFFECTS_EXPRESSIVE,
+        constants::SLOW_EFFECTS_STANDARD,
+    ],
+];
+
+pub fn fast_spatial(scheme: Scheme) -> Spring {
+    SPATIAL[Speed::Fast.ordinal()][scheme.ordinal()]
 }
 
 pub fn fast_effects(scheme: Scheme) -> Spring {
-    match scheme {
-        Scheme::Expressive => constants::FAST_EFFECTS_EXPRESSIVE,
-        Scheme::Standard => constants::FAST_EFFECTS_STANDARD,
-    }
+    EFFECTS[Speed::Fast.ordinal()][scheme.ordinal()]
 }
 
 pub fn default_spatial(scheme: Scheme) -> Spring {
-    match scheme {
-        Scheme::Expressive => constants::DEFAULT_SPATIAL_EXPRESSIVE,
-        Scheme::Standard => constants::DEFAULT_SPATIAL_STANDARD,
-    }
+    SPATIAL[Speed::Default.ordinal()][scheme.ordinal()]
 }
 
 pub fn default_effects(scheme: Scheme) -> Spring {
-    match scheme {
-        Scheme::Expressive => constants::DEFAULT_EFFECTS_EXPRESSIVE,
-        Scheme::Standard => constants::DEFAULT_EFFECTS_STANDARD,
-    }
+    EFFECTS[Speed::Default.ordinal()][scheme.ordinal()]
 }
 
 pub fn slow_spatial(scheme: Scheme) -> Spring {
-    match scheme {
-        Scheme::Expressive => constants::SLOW_SPATIAL_EXPRESSIVE,
-        Scheme::Standard => constants::SLOW_SPATIAL_STANDARD,
-    }
+    SPATIAL[Speed::Slow.ordinal()][scheme.ordinal()]
 }
 
 pub fn slow_effects(scheme: Scheme) -> Spring {
-    match scheme {
-        Scheme::Expressive => constants::SLOW_EFFECTS_EXPRESSIVE,
-        Scheme::Standard => constants::SLOW_EFFECTS_STANDARD,
+    EFFECTS[Speed::Slow.ordinal()][scheme.ordinal()]
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Speed {
+    Fast,
+    #[default]
+    Default,
+    Slow,
+}
+
+impl Speed {
+    const fn ordinal(self) -> usize {
+        match self {
+            Speed::Fast => 0,
+            Speed::Default => 1,
+            Speed::Slow => 2,
+        }
+    }
+
+    #[must_use]
+    pub fn spatial(self, scheme: Scheme) -> Spring {
+        SPATIAL[self.ordinal()][scheme.ordinal()]
+    }
+
+    #[must_use]
+    pub fn effects(self, scheme: Scheme) -> Spring {
+        EFFECTS[self.ordinal()][scheme.ordinal()]
+    }
+}
+
+impl Scheme {
+    #[must_use]
+    pub fn spatial(self, speed: Speed) -> Spring {
+        speed.spatial(self)
+    }
+
+    #[must_use]
+    pub fn effects(self, speed: Speed) -> Spring {
+        speed.effects(self)
     }
 }
 
@@ -243,6 +304,16 @@ where
 
     pub fn step(&mut self, now: Instant) {
         self.spring.step(now);
+    }
+
+    pub fn set_model(&mut self, spring: Spring) {
+        self.spring.model = spring;
+    }
+
+    pub fn set_model_if_some(&mut self, spring: Option<Spring>) {
+        if let Some(spring) = spring {
+            self.set_model(spring);
+        }
     }
 
     pub fn set_target(&mut self, target: T, now: Instant) {

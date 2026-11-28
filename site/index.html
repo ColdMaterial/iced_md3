@@ -2,14 +2,51 @@
 <html lang="en">
 <head>
 	<meta charset="utf-8">
-	<meta http-equiv="refresh" content="0; url=iced_m3/index.html">
-	<title>Redirecting…</title>
-	<script>
-		window.location.replace("iced_m3/index.html");
-	</script>
+	<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+	<title>iced_m3 showcase</title>
+	<style>
+		html,
+		body {
+			height: 100%;
+			margin: 0;
+			background: #141218;
+			overflow: hidden;
+		}
+
+		body {
+			font-family: "Roboto", "Segoe UI", system-ui, sans-serif;
+			color: #e6e0e9;
+		}
+
+		#status {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			height: 100%;
+			padding: 24px;
+			text-align: center;
+			font-size: 14px;
+			line-height: 1.6;
+			opacity: 0.7;
+		}
+	</style>
 </head>
 <body>
-	<p>Redirecting to <a href="iced_m3/index.html">iced_m3</a>…</p>
+	<div id="status">Loading the showcase…</div>
+
+	<script type="module">
+		import init from "./showcase.js";
+
+		const status = document.getElementById("status");
+
+		init().then(
+			() => status.remove(),
+			(error) => {
+				status.style.opacity = "1";
+				status.textContent = `Failed to start the showcase: ${error}`;
+				console.error(error);
+			},
+		);
+	</script>
 </body>
 </html>
-

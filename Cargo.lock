@@ -263,6 +263,7 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 name = "badges"
 version = "0.1.0"
 dependencies = [
+ "common",
  "fonts",
  "iced",
  "iced_m3",
@@ -348,6 +349,7 @@ checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 name = "button_groups"
 version = "0.1.0"
 dependencies = [
+ "common",
  "fonts",
  "iced",
  "iced_m3",
@@ -357,6 +359,7 @@ dependencies = [
 name = "buttons"
 version = "0.1.0"
 dependencies = [
+ "common",
  "fonts",
  "iced",
  "iced_m3",
@@ -454,6 +457,7 @@ dependencies = [
 name = "card"
 version = "0.1.0"
 dependencies = [
+ "common",
  "fonts",
  "iced",
  "iced_m3",
@@ -482,6 +486,16 @@ name = "cfg_aliases"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
+
+[[package]]
+name = "checkbox"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "fonts",
+ "iced",
+ "iced_m3",
+]
 
 [[package]]
 name = "clipboard-win"
@@ -547,6 +561,15 @@ checksum = "4356eba6976435498d05a311ee9fc486da3bc81c200d3f0d7dd9703b41913f92"
 dependencies = [
  "bytes",
  "memchr",
+]
+
+[[package]]
+name = "common"
+version = "0.1.0"
+dependencies = [
+ "fonts",
+ "iced",
+ "iced_m3",
 ]
 
 [[package]]
@@ -708,9 +731,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
 
 [[package]]
+name = "demo_sliders"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "fonts",
+ "iced",
+ "iced_m3",
+]
+
+[[package]]
 name = "demo_template"
 version = "0.1.0"
 dependencies = [
+ "common",
+ "fonts",
+ "iced",
+ "iced_m3",
+]
+
+[[package]]
+name = "dialog"
+version = "0.1.0"
+dependencies = [
+ "common",
  "fonts",
  "iced",
  "iced_m3",
@@ -860,6 +904,7 @@ dependencies = [
 name = "fab"
 version = "0.1.0"
 dependencies = [
+ "common",
  "fonts",
  "iced",
  "iced_m3",
@@ -869,6 +914,7 @@ dependencies = [
 name = "fab_menu"
 version = "0.1.0"
 dependencies = [
+ "common",
  "fonts",
  "iced",
  "iced_m3",
@@ -1543,6 +1589,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "inputs"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "fonts",
+ "iced",
+ "iced_m3",
+]
+
+[[package]]
 name = "jni"
 version = "0.22.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1730,6 +1786,7 @@ checksum = "4744e383959f0db86ede514b809b1c53251889093803c05267acc7d4e7030d70"
 name = "loading_indicator"
 version = "0.1.0"
 dependencies = [
+ "common",
  "fonts",
  "iced",
  "iced_m3",
@@ -1845,6 +1902,7 @@ dependencies = [
 name = "menu_demo"
 version = "0.1.0"
 dependencies = [
+ "common",
  "fonts",
  "iced",
  "iced_m3",
@@ -1940,6 +1998,7 @@ dependencies = [
 name = "navbar_demo"
 version = "0.1.0"
 dependencies = [
+ "common",
  "fonts",
  "iced",
  "iced_m3",
@@ -1949,6 +2008,7 @@ dependencies = [
 name = "navrail"
 version = "0.1.0"
 dependencies = [
+ "common",
  "fonts",
  "iced",
  "iced_m3",
@@ -2648,6 +2708,7 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 name = "progress_indicators"
 version = "0.1.0"
 dependencies = [
+ "common",
  "fonts",
  "iced",
  "iced_m3",
@@ -2688,6 +2749,16 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
+
+[[package]]
+name = "radio_demo"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "fonts",
+ "iced",
+ "iced_m3",
+]
 
 [[package]]
 name = "range-alloc"
@@ -2900,6 +2971,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "select_demo"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "fonts",
+ "iced",
+ "iced_m3",
+]
+
+[[package]]
 name = "self_cell"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2956,6 +3037,7 @@ dependencies = [
 name = "shapes_demo"
 version = "0.1.0"
 dependencies = [
+ "common",
  "fonts",
  "iced",
  "iced_m3",
@@ -2966,6 +3048,33 @@ name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+
+[[package]]
+name = "showcase"
+version = "0.1.0"
+dependencies = [
+ "badges",
+ "button_groups",
+ "buttons",
+ "card",
+ "checkbox",
+ "common",
+ "demo_sliders",
+ "dialog",
+ "fab",
+ "fonts",
+ "iced",
+ "iced_m3",
+ "inputs",
+ "menu_demo",
+ "navbar_demo",
+ "navrail",
+ "progress_indicators",
+ "radio_demo",
+ "select_demo",
+ "shapes_demo",
+ "switch",
+]
 
 [[package]]
 name = "signal-hook-registry"
@@ -3213,6 +3322,7 @@ dependencies = [
 name = "switch"
 version = "0.1.0"
 dependencies = [
+ "common",
  "fonts",
  "iced",
  "iced_m3",

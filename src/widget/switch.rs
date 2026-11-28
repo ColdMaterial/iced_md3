@@ -1,14 +1,15 @@
-use std::time::Instant;
+use std::marker::PhantomData;
+
+use iced::time::Instant;
 
 use iced::{
-    Border, Color, Element, Length, Point, Radians, Rectangle, Size,
+    Border, Color, Element, Length, Radians, Rectangle, Size,
     advanced::{
-        Overlay, Widget,
+        Widget,
         layout::{self, Node},
-        mouse, overlay,
+        mouse,
         renderer::Quad,
     },
-    border::Radius,
 };
 use iced_widget::core::Svg;
 
@@ -19,7 +20,14 @@ use crate::{
     },
     style::StateLayer,
     theme::ColorScheme,
-    widget::{common_icons, ripple::Ripple},
+    widget::{
+        common_icons,
+        internal::{
+            geometry::expanded_bounds,
+            motion::{sync_spring_model, sync_style_spring},
+        },
+        ripple::{Ripple, state_layer_overlay},
+    },
 };
 
 const TRACK_SIZE: Size<f32> = Size {
@@ -38,10 +46,10 @@ const STATE_LAYER_SIZE: f32 = 40.0;
 const ICON_SIZE: f32 = 16.0;
 
 const HANDLE_DISABLED_SELECTED_OPACITY: f32 = 1.0;
-const HANDLE_DISABLED_UNSELECTED_OPACITY: f32 = 0.38;
-const ICON_DISABLED_OPACITY: f32 = 0.38;
-const TRACK_DISABLED_OPACITY: f32 = 0.12;
-const OUTLINE_DISABLED_OPACITY: f32 = 0.38;
+const HANDLE_DISABLED_UNSELECTED_OPACITY: f32 = crate::style::DISABLED_STATE_LAYER_OPACITY;
+const ICON_DISABLED_OPACITY: f32 = crate::style::DISABLED_STATE_LAYER_OPACITY;
+const TRACK_DISABLED_OPACITY: f32 = crate::style::PRESSED_STATE_LAYER_OPACITY;
+const OUTLINE_DISABLED_OPACITY: f32 = crate::style::DISABLED_STATE_LAYER_OPACITY;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum IconMode {
@@ -141,7 +149,7 @@ impl Style {
     }
 }
 
-pub struct Switch<Message>
+pub struct Switch<Message, Theme = iced::Theme, Renderer = iced::Renderer>
 where
     Message: Clone,
 {
@@ -154,9 +162,10 @@ where
 
     // Cache
     style_checked: bool,
+    renderer: PhantomData<fn() -> (Theme, Renderer)>,
 }
 
-impl<Message> Switch<Message>
+impl<Message, Theme, Renderer> Switch<Message, Theme, Renderer>
 where
     Message: Clone,
 {
@@ -170,6 +179,7 @@ where
             effects_spring: None,
             spatial_spring: None,
             style_checked: false,
+            renderer: PhantomData,
         }
     }
 
@@ -179,11 +189,7 @@ where
         self
     }
 
-    #[must_use]
-    pub fn on_toggle_maybe(mut self, on_toggle: Option<Message>) -> Self {
-        self.on_toggle = on_toggle;
-        self
-    }
+    crate::macros::maybe_assign!(on_toggle_maybe, on_toggle, Option<Message>);
 
     #[must_use]
     pub fn icon_mode(mut self, icon_mode: IconMode) -> Self {
@@ -191,13 +197,7 @@ where
         self
     }
 
-    #[must_use]
-    pub fn icon_mode_maybe(self, icon_mode: Option<IconMode>) -> Self {
-        match icon_mode {
-            Some(mode) => self.icon_mode(mode),
-            None => self,
-        }
-    }
+    crate::macros::maybe_delegate!(icon_mode_maybe, icon_mode, Option<IconMode>);
 
     #[must_use]
     pub fn motion_scheme(mut self, scheme: motion::Scheme) -> Self {
@@ -212,11 +212,7 @@ where
         self
     }
 
-    #[must_use]
-    pub fn effects_spring_maybe(mut self, spring: Option<Spring>) -> Self {
-        self.effects_spring = spring;
-        self
-    }
+    crate::macros::maybe_assign!(effects_spring_maybe, effects_spring, Option<Spring>);
 
     #[must_use]
     pub fn spatial_spring(mut self, spring: Spring) -> Self {
@@ -224,11 +220,7 @@ where
         self
     }
 
-    #[must_use]
-    pub fn spatial_spring_maybe(mut self, spring: Option<Spring>) -> Self {
-        self.spatial_spring = spring;
-        self
-    }
+    crate::macros::maybe_assign!(spatial_spring_maybe, spatial_spring, Option<Spring>);
 
     fn icon_rotation_for(&self, selected: bool) -> Radians {
         if selected {
@@ -267,20 +259,7 @@ struct State {
     drag_offset: f32,
 }
 
-impl State {
-    fn set_spatial_spring(&mut self, spatial: Spring) {
-        self.icon_rotation_spring.spring.model = spatial;
-        self.handle_position_spring.spring.model = spatial;
-        self.handle_size_spring.spring.model = spatial;
-    }
-
-    fn set_effects_spring(&mut self, effects: Spring) {
-        self.icon_opacity_spring.spring.model = effects;
-        self.style_spring.spring.model = effects;
-    }
-}
-
-impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer> for Switch<Message>
+impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer> for Switch<Message, Theme, Renderer>
 where
     Message: Clone,
     Renderer: iced::advanced::svg::Renderer + iced_widget::renderer::geometry::Renderer,
@@ -466,12 +445,7 @@ where
         // While a drag is in progress the pointer can leave the track, but the
         // ripple has to stay pressed until the button is released
         let interaction_bounds = if state.is_dragging {
-            Rectangle {
-                x: bounds.x - 1.0e6,
-                y: bounds.y - 1.0e6,
-                width: bounds.width + 2.0e6,
-                height: bounds.height + 2.0e6,
-            }
+            expanded_bounds(bounds)
         } else {
             bounds
         };
@@ -484,16 +458,23 @@ where
             shell,
         );
 
-        if let Some(effects_spring) = self.effects_spring
-            && effects_spring != state.last_effects_spring
-        {
-            state.set_effects_spring(effects_spring);
-        }
-        if let Some(spatial_spring) = self.spatial_spring
-            && spatial_spring != state.last_spatial_spring
-        {
-            state.set_spatial_spring(spatial_spring);
-        }
+        sync_spring_model(
+            &mut state.last_effects_spring,
+            self.effects_spring,
+            &mut [
+                &mut state.icon_opacity_spring.spring,
+                &mut state.style_spring.spring,
+            ],
+        );
+        sync_spring_model(
+            &mut state.last_spatial_spring,
+            self.spatial_spring,
+            &mut [
+                &mut state.icon_rotation_spring.spring,
+                &mut state.handle_position_spring.spring,
+                &mut state.handle_size_spring.spring,
+            ],
+        );
 
         let drag_progress = state.drag_position.map(|drag_position| {
             ((drag_position - HANDLE_CENTER_MIN) / (HANDLE_CENTER_MAX - HANDLE_CENTER_MIN))
@@ -511,13 +492,15 @@ where
                 .interpolate(*self.style.state(true, self.on_toggle.is_some()), progress),
             None => *self.style.state(visual_selected, self.on_toggle.is_some()),
         };
-        if !self.style_checked && self.style != state.last_style {
-            state.style_spring.reset(style, now);
-            state.last_style = self.style;
-            self.style_checked = true;
+        if sync_style_spring(
+            &mut state.style_spring,
+            &mut self.style_checked,
+            &mut state.last_style,
+            self.style,
+            style,
+            now,
+        ) {
             shell.request_redraw();
-        } else {
-            state.style_spring.set_target(style, now);
         }
 
         state
@@ -648,8 +631,8 @@ where
         tree: &'b mut iced::advanced::widget::Tree,
         layout: iced::advanced::Layout<'b>,
         _renderer: &Renderer,
-        _viewport: &iced::Rectangle,
-        _translation: iced::Vector,
+        viewport: &iced::Rectangle,
+        translation: iced::Vector,
     ) -> Option<iced::advanced::overlay::Element<'b, Message, Theme, Renderer>> {
         let state = tree.state.downcast_ref::<State>();
         let bounds = layout.bounds();
@@ -659,14 +642,15 @@ where
             state.handle_position_spring.value(),
         );
         let enabled = self.on_toggle.is_some();
-        (enabled && state.ripple.is_visible(ripple_bounds.size(), enabled)).then(|| {
-            let overlay = StateLayerOverlay {
-                ripple: state.ripple,
-                layer: *self.style.state_layer(self.selected),
-                bounds: ripple_bounds,
-            };
-            overlay::Element::new(Box::new(overlay))
-        })
+
+        state_layer_overlay(
+            state.ripple,
+            *self.style.state_layer(self.selected),
+            ripple_bounds,
+            translation,
+            viewport,
+            enabled,
+        )
     }
 }
 
@@ -696,47 +680,10 @@ fn state_layer_bounds(bounds: Rectangle, handle_size: f32, handle_center: f32) -
     }
 }
 
-struct StateLayerOverlay {
-    ripple: Ripple,
-    layer: StateLayer,
-    bounds: Rectangle,
-}
-
-impl<Message, Theme, Renderer> Overlay<Message, Theme, Renderer> for StateLayerOverlay
-where
-    Renderer: iced_widget::renderer::geometry::Renderer,
-{
-    fn layout(&mut self, _renderer: &Renderer, _bounds: Size) -> iced::advanced::layout::Node {
-        Node::new(Size {
-            width: self.bounds.width,
-            height: self.bounds.height,
-        })
-        .move_to(Point::new(self.bounds.x, self.bounds.y))
-    }
-
-    fn draw(
-        &self,
-        renderer: &mut Renderer,
-        _theme: &Theme,
-        _style: &iced::advanced::renderer::Style,
-        layout: iced::advanced::Layout<'_>,
-        _cursor: mouse::Cursor,
-    ) {
-        self.ripple.draw(
-            renderer,
-            layout.bounds(),
-            Radius::from(f32::MAX),
-            self.layer,
-            true,
-        );
-    }
-}
-
-impl<'a, Message> From<Switch<Message>> for Element<'a, Message>
-where
-    Message: 'a + Clone,
-{
-    fn from(value: Switch<Message>) -> Self {
-        Element::new(value)
-    }
-}
+crate::macros::impl_element_from!(
+    ['a, Message, Theme, Renderer] Switch<Message, Theme, Renderer> => Element<'a, Message, Theme, Renderer>
+    where
+        Message: 'a + Clone,
+        Theme: 'a,
+        Renderer: 'a + iced::advanced::svg::Renderer + iced_widget::renderer::geometry::Renderer,
+);

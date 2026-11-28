@@ -1,5 +1,7 @@
-# Simple workflow for deploying static content to GitHub Pages
-name: Deploy static content to Pages
+# Builds the WASM showcase and the rustdoc API reference, then publishes both
+# to GitHub Pages as a single static site.
+name: Deploy site to Pages
+
 env:
   CARGO_TERM_COLOR: always
   RUSTDOCFLAGS: --cfg docsrs
@@ -25,11 +27,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Single deploy job since we're just deploying
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -38,20 +36,70 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      - name: Update Rust
-        run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
+      - name: Install Rust toolchains
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup target add wasm32-unknown-unknown
+          rustup toolchain install nightly --profile minimal
+
+      - name: Cache the build
+        uses: Swatinem/rust-cache@v2
+        with:
+          # The workspace and the WASM target produce different artifacts,
+          # so keep their caches apart.
+          key: ${{ runner.os }}-pages
+
+      # `wasm-bindgen` refuses to process a module built by a different
+      # version of itself, so the CLI must match `Cargo.lock` exactly.
+      - name: Resolve wasm-bindgen version
+        id: wasm_bindgen
+        run: |
+          version=$(sed -n '/^name = "wasm-bindgen"$/,/^version = /p' Cargo.lock \
+            | sed -n 's/^version = "\(.*\)"$/\1/p' \
+            | head -n 1)
+          echo "Resolved wasm-bindgen version: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install wasm-bindgen-cli
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ steps.wasm_bindgen.outputs.version }}
+
+      - name: Build the showcase for the web
+        run: |
+          cargo build --release --target wasm32-unknown-unknown -p showcase
+          # The showcase is served from the site root, so `index.html` can load
+          # `showcase.js` without any redirects.
+          wasm-bindgen \
+            --target web \
+            --no-typescript \
+            --out-dir publish \
+            --out-name showcase \
+            target/wasm32-unknown-unknown/release/showcase.wasm
 
       - name: Generate rustdoc documentation
+        run: cargo +nightly doc --no-deps -p iced_m3 --all-features
+
+      - name: Assemble the site
         run: |
-          cargo +nightly doc --no-deps -p iced_m3 --all-features
-          mkdir -p publish/
-          cp -r ./site/* ./publish/
-          cp -r ./target/doc/* ./publish/
+          mkdir -p publish
+          cp -r ./target/doc/. ./publish/
+          # Copied last so that the site files always win over rustdoc output.
+          cp -a ./site/. ./publish/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: './publish/'
+
+  deploy:
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5

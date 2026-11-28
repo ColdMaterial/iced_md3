@@ -19,6 +19,12 @@ pub enum Icon<'a> {
     Svg(svg::Handle),
 }
 
+impl<'a> From<svg::Handle> for Icon<'a> {
+    fn from(handle: svg::Handle) -> Self {
+        Self::Svg(handle)
+    }
+}
+
 /// An icon widget that can either display a text icon or an SVG icon.
 pub struct HybridIcon<'a> {
     icon: Icon<'a>,

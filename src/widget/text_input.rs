@@ -1,106 +1,73 @@
-//! Text inputs display fields that can be filled with text.
-//!
-//! # Example
-//! ```no_run
-//! # mod iced { pub mod widget { pub use iced_widget::*; } pub use iced_widget::Renderer; pub use iced_widget::core::*; }
-//! # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
-//! #
-//! use iced::widget::text_input;
-//!
-//! struct State {
-//!    content: String,
-//! }
-//!
-//! #[derive(Debug, Clone)]
-//! enum Message {
-//!     ContentChanged(String)
-//! }
-//!
-//! fn view(state: &State) -> Element<'_, Message> {
-//!     text_input("Type something here...", &state.content)
-//!         .on_input(Message::ContentChanged)
-//!         .into()
-//! }
-//!
-//! fn update(state: &mut State, message: Message) {
-//!     match message {
-//!         Message::ContentChanged(content) => {
-//!             state.content = content;
-//!         }
-//!     }
-//! }
-//! ```
+mod action;
+mod context_menu;
 mod editor;
 mod value;
 
 pub mod cursor;
 
+pub use action::{Action, ActionLabels, Shortcut};
 pub use cursor::Cursor;
+use iced::advanced::svg;
 use iced::border::Radius;
 pub use value::Value;
 
-use editor::Editor;
+pub(crate) use context_menu::{ContextMenu, ContextMenuHost, ContextMenuOverlay};
+pub(crate) use editor::Editor;
 
-use iced_widget::core::alignment;
-use iced_widget::core::clipboard::{self, Clipboard};
-use iced_widget::core::input_method;
-use iced_widget::core::keyboard;
-use iced_widget::core::keyboard::key;
-use iced_widget::core::layout;
-use iced_widget::core::mouse::{self, click};
-use iced_widget::core::renderer;
-use iced_widget::core::text::paragraph::{self, Paragraph as _};
-use iced_widget::core::text::{self, Text};
-use iced_widget::core::time::{Duration, Instant};
-use iced_widget::core::touch;
-use iced_widget::core::widget;
-use iced_widget::core::widget::operation::{self, Operation};
-use iced_widget::core::widget::tree::{self, Tree};
-use iced_widget::core::window;
 use iced_widget::core::{
     Alignment, Background, Border, Color, Element, Event, InputMethod, Layout, Length, Padding,
-    Pixels, Point, Rectangle, Shell, Size, Theme, Vector, Widget,
+    Pixels, Point, Radians, Rectangle, Shell, Size, Theme, Vector, Widget, alignment,
+    clipboard::{self, Clipboard},
+    input_method,
+    keyboard::{self, key},
+    layout,
+    mouse::{self, click},
+    overlay, renderer,
+    text::{
+        self, Text,
+        paragraph::{self, Paragraph as _},
+    },
+    time::{Duration, Instant},
+    touch,
+    widget::{
+        self,
+        operation::{self, Operation},
+        tree::{self, Tree},
+    },
+    window,
 };
 
+use crate::animation::motion::{self, SpringValue};
 use crate::style::DIM_ALPHA;
 use crate::theme::ColorScheme;
+use crate::widget::internal::focus::Focus;
+use crate::widget::{common_icons, menu, tooltip};
+use iced_widget::text::IntoFragment;
+use std::borrow::Cow;
 
-/// A field that can be filled with text.
-///
-/// # Example
-/// ```no_run
-/// # mod iced { pub mod widget { pub use iced_widget::*; } pub use iced_widget::Renderer; pub use iced_widget::core::*; }
-/// # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
-/// #
-/// use iced::widget::text_input;
-///
-/// struct State {
-///    content: String,
-/// }
-///
-/// #[derive(Debug, Clone)]
-/// enum Message {
-///     ContentChanged(String)
-/// }
-///
-/// fn view(state: &State) -> Element<'_, Message> {
-///     text_input("Type something here...", &state.content)
-///         .on_input(Message::ContentChanged)
-///         .into()
-/// }
-///
-/// fn update(state: &mut State, message: Message) {
-///     match message {
-///         Message::ContentChanged(content) => {
-///             state.content = content;
-///         }
-///     }
-/// }
-/// ```
+#[derive(Debug, Clone)]
+pub struct Labels<'a> {
+    pub clear: text::Fragment<'a>,
+    pub show_password: text::Fragment<'a>,
+    pub hide_password: text::Fragment<'a>,
+    pub actions: ActionLabels<'a>,
+}
+
+impl Default for Labels<'_> {
+    fn default() -> Self {
+        Self {
+            clear: "Clear".into(),
+            show_password: Cow::Borrowed("Show password"),
+            hide_password: Cow::Borrowed("Hide password"),
+            actions: ActionLabels::default(),
+        }
+    }
+}
+
 pub struct TextInput<'a, Message, Theme = iced_widget::Theme, Renderer = iced_widget::Renderer>
 where
     Theme: Catalog,
-    Renderer: text::Renderer,
+    Renderer: text::Renderer + svg::Renderer,
 {
     id: Option<widget::Id>,
     placeholder: String,
@@ -115,6 +82,7 @@ where
     on_input: Option<Box<dyn Fn(String) -> Message + 'a>>,
     on_paste: Option<Box<dyn Fn(String) -> Message + 'a>>,
     on_submit: Option<Message>,
+    on_toggle_secure: Option<Message>,
     icon: Option<Icon<Renderer::Font>>,
     class: Theme::Class<'a>,
     last_status: Option<Status>,
@@ -122,6 +90,11 @@ where
     label_text: Option<&'a str>,
     background_color: Option<Color>,
     error: bool,
+    clearable: bool,
+    tooltips_enabled: bool,
+    tooltip_style: tooltip::Style,
+    icon_tooltip: Option<text::Fragment<'a>>,
+    labels: Labels<'a>,
 }
 
 /// The default [`Padding`] of a [`TextInput`].
@@ -133,12 +106,155 @@ const LABEL_TEXT_OFFSET: Point = Point::new(
     LABEL_TEXT_SIZE.0 / 4.0 - BORDER_WIDTH / 2.0,
 );
 const BORDER_WIDTH: f32 = 2.0;
+const EYE_ICON_SIZE: f32 = 24.0;
+const EYE_ICON_SPACING: f32 = 8.0;
+const CLEAR_ICON_SIZE: f32 = 20.0;
+const CLEAR_ICON_SPACING: f32 = 8.0;
+
+/// The maximum amount of undo steps kept by a [`TextInput`].
+const MAX_UNDO_STEPS: usize = 64;
+
+/// The time window used to group consecutive insertions or deletions into a
+/// single undo step.
+const UNDO_GROUPING_WINDOW: Duration = Duration::from_millis(500);
+
+#[derive(Debug, Default, Clone)]
+pub(crate) struct History {
+    undo: Vec<Snapshot>,
+    redo: Vec<Snapshot>,
+    last_edit: Option<EditKind>,
+    last_edit_at: Option<Instant>,
+    last_value: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Snapshot {
+    pub(crate) value: String,
+    pub(crate) cursor: Cursor,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EditKind {
+    Insert,
+    Delete,
+    Other,
+}
+
+impl History {
+    pub(crate) fn record(&mut self, value: &str, cursor: Cursor, kind: EditKind) {
+        let now = Instant::now();
+
+        let is_grouped = matches!(kind, EditKind::Insert | EditKind::Delete)
+            && self.last_edit == Some(kind)
+            && self
+                .last_edit_at
+                .is_some_and(|last| now.duration_since(last) < UNDO_GROUPING_WINDOW);
+
+        self.redo.clear();
+
+        if !is_grouped {
+            if self.undo.len() == MAX_UNDO_STEPS {
+                self.undo.remove(0);
+            }
+
+            self.undo.push(Snapshot {
+                value: value.to_owned(),
+                cursor,
+            });
+        }
+
+        self.last_edit = Some(kind);
+        self.last_edit_at = Some(now);
+    }
+
+    pub(crate) fn commit(&mut self, value: &str) {
+        self.last_value = Some(value.to_owned());
+    }
+
+    pub(crate) fn break_group(&mut self) {
+        self.last_edit = None;
+        self.last_edit_at = None;
+    }
+
+    pub(crate) fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    pub(crate) fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+
+    pub(crate) fn undo(&mut self, value: &str, cursor: Cursor) -> Option<Snapshot> {
+        self.break_group();
+
+        let snapshot = self.undo.pop()?;
+
+        self.redo.push(Snapshot {
+            value: value.to_owned(),
+            cursor,
+        });
+
+        self.last_value = Some(snapshot.value.clone());
+
+        Some(snapshot)
+    }
+
+    pub(crate) fn redo(&mut self, value: &str, cursor: Cursor) -> Option<Snapshot> {
+        self.break_group();
+
+        let snapshot = self.redo.pop()?;
+
+        if self.undo.len() == MAX_UNDO_STEPS {
+            self.undo.remove(0);
+        }
+
+        self.undo.push(Snapshot {
+            value: value.to_owned(),
+            cursor,
+        });
+
+        self.last_value = Some(snapshot.value.clone());
+
+        Some(snapshot)
+    }
+
+    pub(crate) fn reset(&mut self, value: &str) {
+        self.undo.clear();
+        self.redo.clear();
+        self.break_group();
+        self.last_value = Some(value.to_owned());
+    }
+}
+
+pub(crate) fn edit_value(
+    value: &mut Value,
+    cursor: &mut Cursor,
+    history: &mut History,
+    kind: EditKind,
+    change: impl FnOnce(&mut Editor<'_>),
+) -> String {
+    let before = value.to_string();
+    let cursor_before = *cursor;
+
+    let contents = {
+        let mut editor = Editor::new(value, cursor);
+        change(&mut editor);
+        editor.contents()
+    };
+
+    if contents != before {
+        history.record(&before, cursor_before, kind);
+        history.commit(&contents);
+    }
+
+    contents
+}
 
 impl<'a, Message, Theme, Renderer> TextInput<'a, Message, Theme, Renderer>
 where
     Message: Clone,
     Theme: Catalog,
-    Renderer: text::Renderer,
+    Renderer: text::Renderer + svg::Renderer,
 {
     /// Creates a new [`TextInput`] with the given placeholder and
     /// its current value.
@@ -157,6 +273,7 @@ where
             on_input: None,
             on_paste: None,
             on_submit: None,
+            on_toggle_secure: None,
             icon: None,
             class: Theme::default(),
             last_status: None,
@@ -164,11 +281,76 @@ where
             label_text: None,
             background_color: None,
             error: false,
+            clearable: false,
+            tooltips_enabled: false,
+            tooltip_style: tooltip::Style::new(theme),
+            icon_tooltip: None,
+            labels: Labels::default(),
         }
     }
 
     pub fn error(mut self, error: bool) -> Self {
         self.error = error;
+        self
+    }
+
+    /// Shows a button that clears the contents of the [`TextInput`] when pressed.
+    ///
+    /// The button is only shown when the [`TextInput`] has an
+    /// [`on_input`](Self::on_input) callback and its value is not empty.
+    pub fn clearable(mut self, clearable: bool) -> Self {
+        self.clearable = clearable;
+        self
+    }
+
+    /// Enables tooltips for the secure and clear buttons.
+    #[must_use]
+    pub fn tooltips_enabled(mut self, enabled: bool) -> Self {
+        self.tooltips_enabled = enabled;
+        self
+    }
+
+    /// Sets the [`tooltip::Style`] used for the built-in tooltips.
+    #[must_use]
+    pub fn tooltip_style(mut self, style: tooltip::Style) -> Self {
+        self.tooltip_style = style;
+        self
+    }
+
+    /// Sets the label shown in a tooltip when the [`Icon`] is hovered.
+    #[must_use]
+    pub fn icon_tooltip(mut self, label: impl IntoFragment<'a>) -> Self {
+        self.icon_tooltip = Some(label.into_fragment());
+        self
+    }
+
+    #[must_use]
+    pub fn labels(mut self, labels: Labels<'a>) -> Self {
+        self.labels = labels;
+        self
+    }
+
+    #[must_use]
+    pub fn clear_label(mut self, label: impl IntoFragment<'a>) -> Self {
+        self.labels.clear = label.into_fragment();
+        self
+    }
+
+    #[must_use]
+    pub fn show_password_label(mut self, label: impl IntoFragment<'a>) -> Self {
+        self.labels.show_password = label.into_fragment();
+        self
+    }
+
+    #[must_use]
+    pub fn hide_password_label(mut self, label: impl IntoFragment<'a>) -> Self {
+        self.labels.hide_password = label.into_fragment();
+        self
+    }
+
+    #[must_use]
+    pub fn action_label(mut self, action: Action, label: impl IntoFragment<'a>) -> Self {
+        self.labels.actions.set(action, label);
         self
     }
 
@@ -185,10 +367,22 @@ where
     }
 
     /// Converts the [`TextInput`] into a secure password input.
+    ///
+    /// Combine with [`TextInput::on_toggle_secure`] to show a visibility icon.
     pub fn secure(mut self, is_secure: bool) -> Self {
         self.is_secure = is_secure;
         self
     }
+
+    /// Sets the message produced when the visibility toggle icon is pressed.
+    ///
+    /// Toggle [`TextInput::secure`] in response to reveal or hide the contents.
+    pub fn on_toggle_secure(mut self, on_toggle_secure: Message) -> Self {
+        self.on_toggle_secure = Some(on_toggle_secure);
+        self
+    }
+
+    crate::macros::maybe_assign!(on_toggle_secure_maybe, on_toggle_secure, Option<Message>);
 
     /// Sets the message that should be produced when some text is typed into
     /// the [`TextInput`].
@@ -215,12 +409,7 @@ where
         self
     }
 
-    /// Sets the message that should be produced when the [`TextInput`] is
-    /// focused and the enter key is pressed, if `Some`.
-    pub fn on_submit_maybe(mut self, on_submit: Option<Message>) -> Self {
-        self.on_submit = on_submit;
-        self
-    }
+    crate::macros::maybe_assign!(on_submit_maybe, on_submit, Option<Message>);
 
     /// Sets the message that should be produced when some text is pasted into
     /// the [`TextInput`].
@@ -297,6 +486,59 @@ where
         self
     }
 
+    fn eye_bounds(&self, layout: Layout<'_>) -> Option<Rectangle> {
+        self.on_toggle_secure.as_ref()?;
+
+        let mut children = layout.children();
+        children.next()?;
+
+        if self.icon.is_some() {
+            children.next()?;
+        }
+
+        if self.label_text.is_some() {
+            children.next()?;
+        }
+
+        children.next().map(|eye| eye.bounds())
+    }
+
+    fn show_clear(&self, value: &Value) -> bool {
+        self.clearable && self.on_input.is_some() && !value.is_empty()
+    }
+
+    fn clear_bounds(&self, layout: Layout<'_>) -> Option<Rectangle> {
+        if !self.show_clear(&self.value) {
+            return None;
+        }
+
+        let mut children = layout.children();
+        children.next()?;
+
+        if self.icon.is_some() {
+            children.next()?;
+        }
+
+        if self.label_text.is_some() {
+            children.next()?;
+        }
+
+        if self.on_toggle_secure.is_some() {
+            children.next()?;
+        }
+
+        children.next().map(|clear| clear.bounds())
+    }
+
+    fn icon_bounds(&self, layout: Layout<'_>) -> Option<Rectangle> {
+        self.icon.as_ref()?;
+
+        let mut children = layout.children();
+        children.next()?;
+
+        children.next().map(|icon| icon.bounds())
+    }
+
     /// Lays out the [`TextInput`], overriding its [`Value`] if provided.
     ///
     /// [`Renderer`]: text::Renderer
@@ -340,7 +582,23 @@ where
             ..placeholder_text
         });
 
-        let mut children = if let Some(icon) = &self.icon {
+        let eye_size = EYE_ICON_SIZE.min(text_bounds.height + padding.top + padding.bottom);
+        let has_eye = self.on_toggle_secure.is_some();
+        let eye_reserved = if has_eye {
+            eye_size + EYE_ICON_SPACING
+        } else {
+            0.0
+        };
+
+        let clear_size = CLEAR_ICON_SIZE.min(text_bounds.height + padding.top + padding.bottom);
+        let has_clear = self.show_clear(value);
+        let clear_reserved = if has_clear {
+            clear_size + CLEAR_ICON_SPACING
+        } else {
+            0.0
+        };
+
+        let icon_width = if let Some(icon) = &self.icon {
             let mut content = [0; 4];
 
             let icon_text = Text {
@@ -357,30 +615,89 @@ where
 
             let _ = state.icon.update(icon_text);
 
-            let icon_width = state.icon.min_width();
-
-            let (text_position, icon_position) = match icon.side {
-                Side::Left => (
-                    Point::new(padding.left + icon_width + icon.spacing, padding.top),
-                    Point::new(padding.left, padding.top),
-                ),
-                Side::Right => (
-                    Point::new(padding.left, padding.top),
-                    Point::new(padding.left + text_bounds.width - icon_width, padding.top),
-                ),
-            };
-
-            let text_node =
-                layout::Node::new(text_bounds - Size::new(icon_width + icon.spacing, 0.0))
-                    .move_to(text_position);
-
-            let icon_node =
-                layout::Node::new(Size::new(icon_width, text_bounds.height)).move_to(icon_position);
-
-            vec![text_node, icon_node]
+            Some(state.icon.min_width())
         } else {
-            vec![layout::Node::new(text_bounds).move_to(Point::new(padding.left, padding.top))]
+            None
         };
+
+        let mut text_position = Point::new(padding.left, padding.top);
+        let mut text_width = text_bounds.width;
+        let mut children = Vec::with_capacity(6);
+
+        let left_icon_node = match (&self.icon, icon_width) {
+            (Some(icon), Some(icon_width)) if matches!(icon.side, Side::Left) => {
+                text_width -= icon_width + icon.spacing;
+                text_position.x += icon_width + icon.spacing;
+
+                Some(
+                    layout::Node::new(Size::new(icon_width, text_bounds.height))
+                        .move_to(Point::new(padding.left, padding.top)),
+                )
+            }
+            _ => None,
+        };
+
+        let right_icon_node = match (&self.icon, icon_width) {
+            (Some(icon), Some(icon_width)) if matches!(icon.side, Side::Right) => {
+                text_width -= icon_width + icon.spacing;
+
+                Some(
+                    layout::Node::new(Size::new(icon_width, text_bounds.height)).move_to(
+                        Point::new(
+                            padding.left + text_bounds.width
+                                - icon_width
+                                - eye_reserved
+                                - clear_reserved,
+                            padding.top,
+                        ),
+                    ),
+                )
+            }
+            _ => None,
+        };
+
+        let eye_node = if has_eye {
+            text_width -= eye_reserved;
+
+            let eye_y = padding.top + (text_bounds.height - eye_size) / 2.0;
+
+            Some(
+                layout::Node::new(Size::new(eye_size, eye_size)).move_to(Point::new(
+                    padding.left + text_bounds.width - eye_size,
+                    eye_y,
+                )),
+            )
+        } else {
+            None
+        };
+
+        let clear_node = if has_clear {
+            text_width -= clear_reserved;
+
+            let clear_y = padding.top + (text_bounds.height - clear_size) / 2.0;
+
+            Some(
+                layout::Node::new(Size::new(clear_size, clear_size)).move_to(Point::new(
+                    padding.left + text_bounds.width - eye_reserved - clear_size,
+                    clear_y,
+                )),
+            )
+        } else {
+            None
+        };
+
+        let text_node = layout::Node::new(Size::new(text_width.max(0.0), text_bounds.height))
+            .move_to(text_position);
+        state.text_bounds = Some(text_node.bounds());
+        children.push(text_node);
+
+        if let Some(icon_node) = left_icon_node {
+            children.push(icon_node);
+        }
+
+        if let Some(icon_node) = right_icon_node {
+            children.push(icon_node);
+        }
 
         if let Some(label_text) = self.label_text {
             let text = Text {
@@ -397,6 +714,14 @@ where
             let _ = state.label.update(text);
             let label_bounds = state.label.min_bounds();
             children.push(layout::Node::new(label_bounds).move_to(LABEL_TEXT_OFFSET));
+        }
+
+        if let Some(eye_node) = eye_node {
+            children.push(eye_node);
+        }
+
+        if let Some(clear_node) = clear_node {
+            children.push(clear_node);
         }
 
         layout::Node::with_children(text_bounds.expand(padding), children)
@@ -506,46 +831,6 @@ where
             Color::TRANSPARENT,
         );
 
-        if let Some(Status::Focused { is_hovered: _ }) = self.last_status
-            && let Some(label_text) = self.label_text
-        {
-            let label_bounds = children_layout.next().unwrap().bounds();
-
-            renderer.fill_quad(
-                renderer::Quad {
-                    bounds: Rectangle {
-                        height: BORDER_WIDTH,
-                        width: label_bounds.width + 2.0 * LABEL_BACKGROUND_PADDING,
-                        x: label_bounds.x - LABEL_BACKGROUND_PADDING,
-                        y: label_bounds.y - LABEL_TEXT_OFFSET.y,
-                    },
-                    ..Default::default()
-                },
-                self.background_color.unwrap(),
-            );
-
-            renderer.fill_text(
-                Text {
-                    font: self.font.unwrap_or_else(|| renderer.default_font()),
-                    line_height: self.line_height,
-                    content: label_text.to_string(),
-                    bounds: Size::new(f32::INFINITY, LABEL_TEXT_SIZE.into()),
-                    size: LABEL_TEXT_SIZE,
-                    align_x: text::Alignment::Default,
-                    align_y: alignment::Vertical::Center,
-                    shaping: text::Shaping::Advanced,
-                    wrapping: text::Wrapping::default(),
-                },
-                label_bounds.position(),
-                if self.error {
-                    self.theme.error()
-                } else {
-                    self.theme.primary()
-                },
-                *viewport,
-            );
-        }
-
         if self.icon.is_some() {
             let icon_layout = children_layout.next().unwrap();
 
@@ -563,6 +848,109 @@ where
             );
         }
 
+        if self.label_text.is_some() {
+            let label_bounds = children_layout.next().unwrap().bounds();
+
+            if let Some(Status::Focused { is_hovered: _ }) = self.last_status {
+                renderer.fill_quad(
+                    renderer::Quad {
+                        bounds: Rectangle {
+                            height: BORDER_WIDTH,
+                            width: label_bounds.width + 2.0 * LABEL_BACKGROUND_PADDING,
+                            x: label_bounds.x - LABEL_BACKGROUND_PADDING,
+                            y: label_bounds.y - LABEL_TEXT_OFFSET.y,
+                        },
+                        ..Default::default()
+                    },
+                    self.background_color.unwrap(),
+                );
+
+                renderer.fill_text(
+                    Text {
+                        font: self.font.unwrap_or_else(|| renderer.default_font()),
+                        line_height: self.line_height,
+                        content: self.label_text.unwrap_or_default().to_string(),
+                        bounds: Size::new(f32::INFINITY, LABEL_TEXT_SIZE.into()),
+                        size: LABEL_TEXT_SIZE,
+                        align_x: text::Alignment::Default,
+                        align_y: alignment::Vertical::Center,
+                        shaping: text::Shaping::Advanced,
+                        wrapping: text::Wrapping::default(),
+                    },
+                    label_bounds.position(),
+                    if self.error {
+                        self.theme.error()
+                    } else {
+                        self.theme.primary()
+                    },
+                    *viewport,
+                );
+            }
+        }
+
+        if self.on_toggle_secure.is_some() {
+            let eye_bounds = children_layout.next().unwrap().bounds();
+
+            let eye_progress = state
+                .eye_spring
+                .as_ref()
+                .map(|spring| spring.value().clamp(0.0, 1.0))
+                .unwrap_or(if self.is_secure { 0.0 } else { 1.0 });
+
+            let eye_color = if is_disabled {
+                style.icon.scale_alpha(DIM_ALPHA)
+            } else {
+                style.icon
+            };
+
+            if eye_progress < 0.999 {
+                renderer.draw_svg(
+                    svg::Svg {
+                        handle: common_icons::VISIBILITY_OFF.clone(),
+                        color: Some(eye_color),
+                        rotation: Radians(0.0),
+                        opacity: 1.0 - eye_progress,
+                    },
+                    eye_bounds,
+                    eye_bounds,
+                );
+            }
+
+            if eye_progress > 0.001 {
+                renderer.draw_svg(
+                    svg::Svg {
+                        handle: common_icons::VISIBILITY.clone(),
+                        color: Some(eye_color),
+                        rotation: Radians(0.0),
+                        opacity: eye_progress,
+                    },
+                    eye_bounds,
+                    eye_bounds,
+                );
+            }
+        }
+
+        if self.show_clear(value) {
+            let clear_bounds = children_layout.next().unwrap().bounds();
+
+            let clear_color = if is_disabled {
+                style.icon.scale_alpha(DIM_ALPHA)
+            } else {
+                style.icon
+            };
+
+            renderer.draw_svg(
+                svg::Svg {
+                    handle: common_icons::CLOSE.clone(),
+                    color: Some(clear_color),
+                    rotation: Radians(0.0),
+                    opacity: 1.0,
+                },
+                clear_bounds,
+                clear_bounds,
+            );
+        }
+
         let text = value.to_string();
 
         let (cursor, offset, is_selecting) = if let Some(focus) = state
@@ -575,10 +963,7 @@ where
                     let (text_value_width, offset) =
                         measure_cursor_and_scroll_offset(state.value.raw(), text_bounds, position);
 
-                    let is_cursor_visible = !is_disabled
-                        && ((focus.now - focus.updated_at).as_millis()
-                            / CURSOR_BLINK_INTERVAL_MILLIS)
-                            .is_multiple_of(2);
+                    let is_cursor_visible = !is_disabled && focus.is_caret_visible();
 
                     let cursor = if is_cursor_visible {
                         Some((
@@ -697,27 +1082,59 @@ where
     }
 }
 
-impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for TextInput<'_, Message, Theme, Renderer>
+impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
+    for TextInput<'a, Message, Theme, Renderer>
 where
     Message: Clone,
     Theme: Catalog,
-    Renderer: text::Renderer,
+    Renderer: text::Renderer + svg::Renderer + 'a,
+    Renderer::Font: From<iced::Font>,
 {
     fn tag(&self) -> tree::Tag {
         tree::Tag::of::<State<Renderer::Paragraph>>()
     }
 
     fn state(&self) -> tree::State {
-        tree::State::new(State::<Renderer::Paragraph>::new())
+        let mut state = State::<Renderer::Paragraph>::new();
+
+        if self.on_toggle_secure.is_some() {
+            let now = Instant::now();
+            let value = if self.is_secure { 0.0 } else { 1.0 };
+
+            state.eye_spring = Some(SpringValue::new(
+                value,
+                motion::fast_effects(motion::Scheme::default()),
+                now,
+            ));
+        }
+
+        tree::State::new(state)
     }
 
     fn diff(&self, tree: &mut Tree) {
         let state = tree.state.downcast_mut::<State<Renderer::Paragraph>>();
 
+        let value = self.value.to_string();
+
+        if state.history.last_value.as_deref() != Some(value.as_str()) {
+            state.history.reset(&value);
+        }
+
         // Stop pasting if input becomes disabled
         if self.on_input.is_none() {
             state.is_pasting = None;
+            state.context_menu = None;
+        }
+
+        if state.eye_spring.is_none() && self.on_toggle_secure.is_some() {
+            let now = Instant::now();
+            let value = if self.is_secure { 0.0 } else { 1.0 };
+
+            state.eye_spring = Some(SpringValue::new(
+                value,
+                motion::fast_effects(motion::Scheme::default()),
+                now,
+            ));
         }
     }
 
@@ -761,11 +1178,61 @@ where
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
+        {
+            let now = Instant::now();
+            let state = state::<Renderer>(tree);
+
+            if let Some(spring) = &mut state.eye_spring {
+                let target = if self.is_secure { 0.0 } else { 1.0 };
+                spring.set_target(target, now);
+                spring.step(now);
+
+                if !spring.is_at_rest() {
+                    shell.request_redraw();
+                }
+            }
+        }
+
+        {
+            let state = state::<Renderer>(tree);
+
+            // The eye, clear and icon buttons are drawn by hand, so their tooltips are driven
+            // manually instead of wrapping them in a `Tooltip`.
+            state.eye_hover.update(
+                event,
+                cursor,
+                self.eye_bounds(layout),
+                self.tooltips_enabled && self.on_toggle_secure.is_some(),
+                tooltip::DEFAULT_DELAY,
+                shell,
+            );
+            state.clear_hover.update(
+                event,
+                cursor,
+                self.clear_bounds(layout),
+                self.tooltips_enabled && self.show_clear(&self.value),
+                tooltip::DEFAULT_DELAY,
+                shell,
+            );
+            state.icon_hover.update(
+                event,
+                cursor,
+                self.icon_bounds(layout),
+                self.icon.is_some() && self.icon_tooltip.is_some(),
+                tooltip::DEFAULT_DELAY,
+                shell,
+            );
+        }
+
+        let text_bounds = layout
+            .children()
+            .next()
+            .map(|text_layout| text_layout.bounds());
         let update_cache = |state, value| {
             replace_paragraph(
                 renderer,
                 state,
-                layout,
+                text_bounds,
                 value,
                 self.font,
                 self.size,
@@ -774,9 +1241,64 @@ where
         };
 
         match &event {
+            Event::Window(
+                window::Event::Moved(_)
+                | window::Event::Resized(_)
+                | window::Event::Rescaled(_)
+                | window::Event::Closed,
+            ) => {
+                if state::<Renderer>(tree).context_menu.take().is_some() {
+                    shell.request_redraw();
+                }
+            }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
             | Event::Touch(touch::Event::FingerPressed { .. }) => {
                 let state = state::<Renderer>(tree);
+
+                if self
+                    .eye_bounds(layout)
+                    .is_some_and(|eye_bounds| cursor.is_over(eye_bounds))
+                {
+                    if let Some(message) = self.on_toggle_secure.clone() {
+                        shell.publish(message);
+                    }
+
+                    shell.capture_event();
+                    return;
+                }
+
+                if self
+                    .clear_bounds(layout)
+                    .is_some_and(|clear_bounds| cursor.is_over(clear_bounds))
+                {
+                    let now = Instant::now();
+
+                    state.is_focused = Some(Focus::new(now));
+
+                    state.cursor.select_all(&self.value);
+
+                    let contents = edit_value(
+                        &mut self.value,
+                        &mut state.cursor,
+                        &mut state.history,
+                        EditKind::Other,
+                        |editor| editor.delete(),
+                    );
+
+                    if let Some(on_input) = &self.on_input {
+                        shell.publish((on_input)(contents));
+                    }
+
+                    state.is_pasting = None;
+                    state.history.break_group();
+
+                    update_cache(state, &self.value);
+
+                    shell.request_redraw();
+                    shell.capture_event();
+                    return;
+                }
+
                 let cursor_before = state.cursor;
 
                 let click_position = cursor.position_over(layout.bounds());
@@ -784,11 +1306,7 @@ where
                 state.is_focused = if click_position.is_some() {
                     let now = Instant::now();
 
-                    Some(Focus {
-                        updated_at: now,
-                        now,
-                        is_window_focused: true,
-                    })
+                    Some(Focus::new(now))
                 } else {
                     None
                 };
@@ -872,6 +1390,66 @@ where
 
                     shell.capture_event();
                 }
+
+                state.history.break_group();
+            }
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
+                let state = state::<Renderer>(tree);
+
+                if self.on_input.is_none() {
+                    return;
+                }
+
+                let Some(position) = cursor.position_over(layout.bounds()) else {
+                    if state.context_menu.take().is_some() {
+                        shell.request_redraw();
+                    }
+
+                    return;
+                };
+
+                let now = Instant::now();
+                state.is_focused = Some(Focus::new(now));
+
+                if state.cursor.selection(&self.value).is_none() {
+                    let text_layout = layout.children().next().unwrap();
+                    let text_bounds = text_layout.bounds();
+
+                    let alignment_offset = alignment_offset(
+                        text_bounds.width,
+                        state.value.raw().min_width(),
+                        self.alignment,
+                    );
+
+                    let target = position.x - text_bounds.x - alignment_offset;
+
+                    if target > 0.0 {
+                        let value = if self.is_secure {
+                            self.value.secure()
+                        } else {
+                            self.value.clone()
+                        };
+
+                        if let Some(position) =
+                            find_cursor_position(text_bounds, &value, state, target)
+                        {
+                            state.cursor.move_to(position);
+                        }
+                    }
+                }
+
+                let is_already_opened = state
+                    .context_menu
+                    .is_some_and(|menu| menu.position == position);
+
+                if !is_already_opened {
+                    state.context_menu = Some(ContextMenu::new(position));
+                }
+
+                state.history.break_group();
+
+                shell.request_redraw();
+                shell.capture_event();
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
             | Event::Touch(touch::Event::FingerLifted { .. })
@@ -938,6 +1516,8 @@ where
                         shell.request_redraw();
                     }
 
+                    state.history.break_group();
+
                     shell.capture_event();
                 }
             }
@@ -954,6 +1534,41 @@ where
                     let modifiers = state.keyboard_modifiers;
 
                     match key.to_latin(*physical_key) {
+                        Some(c)
+                            if state.keyboard_modifiers.command()
+                                && matches!(c.to_ascii_lowercase(), 'z' | 'y') =>
+                        {
+                            let Some(on_input) = &self.on_input else {
+                                return;
+                            };
+
+                            let is_redo =
+                                c.eq_ignore_ascii_case(&'y') || state.keyboard_modifiers.shift();
+
+                            let current = self.value.to_string();
+                            let cursor = state.cursor;
+
+                            let target = if is_redo {
+                                state.history.redo(&current, cursor)
+                            } else {
+                                state.history.undo(&current, cursor)
+                            };
+
+                            if let Some(snapshot) = target {
+                                self.value = Value::new(&snapshot.value);
+                                state.cursor = snapshot.cursor;
+                                state.is_pasting = None;
+
+                                shell.publish((on_input)(snapshot.value));
+                                shell.request_redraw();
+
+                                focus.updated_at = Instant::now();
+                                update_cache(state, &self.value);
+                            }
+
+                            shell.capture_event();
+                            return;
+                        }
                         Some('c') if state.keyboard_modifiers.command() && !self.is_secure => {
                             if let Some((start, end)) = state.cursor.selection(&self.value) {
                                 clipboard.write(
@@ -977,11 +1592,15 @@ where
                                 );
                             }
 
-                            let mut editor = Editor::new(&mut self.value, &mut state.cursor);
-                            editor.delete();
+                            let contents = edit_value(
+                                &mut self.value,
+                                &mut state.cursor,
+                                &mut state.history,
+                                EditKind::Other,
+                                |editor| editor.delete(),
+                            );
 
-                            let message = (on_input)(editor.contents());
-                            shell.publish(message);
+                            shell.publish((on_input)(contents));
                             shell.capture_event();
 
                             focus.updated_at = Instant::now();
@@ -1010,13 +1629,18 @@ where
                                 }
                             };
 
-                            let mut editor = Editor::new(&mut self.value, &mut state.cursor);
-                            editor.paste(content.clone());
+                            let contents = edit_value(
+                                &mut self.value,
+                                &mut state.cursor,
+                                &mut state.history,
+                                EditKind::Other,
+                                |editor| editor.paste(content.clone()),
+                            );
 
                             let message = if let Some(paste) = &self.on_paste {
-                                (paste)(editor.contents())
+                                (paste)(contents)
                             } else {
-                                (on_input)(editor.contents())
+                                (on_input)(contents)
                             };
                             shell.publish(message);
                             shell.capture_event();
@@ -1029,6 +1653,7 @@ where
                         Some('a') if state.keyboard_modifiers.command() => {
                             let cursor_before = state.cursor;
 
+                            state.history.break_group();
                             state.cursor.select_all(&self.value);
 
                             if cursor_before != state.cursor {
@@ -1051,12 +1676,15 @@ where
                         state.is_pasting = None;
 
                         if let Some(c) = text.chars().next().filter(|c| !c.is_control()) {
-                            let mut editor = Editor::new(&mut self.value, &mut state.cursor);
+                            let contents = edit_value(
+                                &mut self.value,
+                                &mut state.cursor,
+                                &mut state.history,
+                                EditKind::Insert,
+                                |editor| editor.insert(c),
+                            );
 
-                            editor.insert(c);
-
-                            let message = (on_input)(editor.contents());
-                            shell.publish(message);
+                            shell.publish((on_input)(contents));
                             shell.capture_event();
 
                             focus.updated_at = Instant::now();
@@ -1094,11 +1722,15 @@ where
                                 }
                             }
 
-                            let mut editor = Editor::new(&mut self.value, &mut state.cursor);
-                            editor.backspace();
+                            let contents = edit_value(
+                                &mut self.value,
+                                &mut state.cursor,
+                                &mut state.history,
+                                EditKind::Delete,
+                                |editor| editor.backspace(),
+                            );
 
-                            let message = (on_input)(editor.contents());
-                            shell.publish(message);
+                            shell.publish((on_input)(contents));
                             shell.capture_event();
 
                             focus.updated_at = Instant::now();
@@ -1121,11 +1753,15 @@ where
                                 }
                             }
 
-                            let mut editor = Editor::new(&mut self.value, &mut state.cursor);
-                            editor.delete();
+                            let contents = edit_value(
+                                &mut self.value,
+                                &mut state.cursor,
+                                &mut state.history,
+                                EditKind::Delete,
+                                |editor| editor.delete(),
+                            );
 
-                            let message = (on_input)(editor.contents());
-                            shell.publish(message);
+                            shell.publish((on_input)(contents));
                             shell.capture_event();
 
                             focus.updated_at = Instant::now();
@@ -1133,6 +1769,8 @@ where
                         }
                         keyboard::Key::Named(key::Named::Home) => {
                             let cursor_before = state.cursor;
+
+                            state.history.break_group();
 
                             if modifiers.shift() {
                                 state
@@ -1153,6 +1791,8 @@ where
                         keyboard::Key::Named(key::Named::End) => {
                             let cursor_before = state.cursor;
 
+                            state.history.break_group();
+
                             if modifiers.shift() {
                                 state.cursor.select_range(
                                     state.cursor.start(&self.value),
@@ -1172,6 +1812,8 @@ where
                         }
                         keyboard::Key::Named(key::Named::ArrowLeft) => {
                             let cursor_before = state.cursor;
+
+                            state.history.break_group();
 
                             if (self.is_secure && modifiers.jump()) || modifiers.macos_command() {
                                 if modifiers.shift() {
@@ -1204,6 +1846,8 @@ where
                         keyboard::Key::Named(key::Named::ArrowRight) => {
                             let cursor_before = state.cursor;
 
+                            state.history.break_group();
+
                             if (self.is_secure && modifiers.jump()) || modifiers.macos_command() {
                                 if modifiers.shift() {
                                     state.cursor.select_range(
@@ -1234,12 +1878,15 @@ where
                             shell.capture_event();
                         }
                         keyboard::Key::Named(key::Named::Escape) => {
+                            state.history.break_group();
                             state.is_focused = None;
                             state.is_dragging = None;
                             state.is_pasting = None;
+                            state.context_menu = None;
 
                             state.keyboard_modifiers = keyboard::Modifiers::default();
 
+                            shell.request_redraw();
                             shell.capture_event();
                         }
                         _ => {}
@@ -1294,14 +1941,18 @@ where
                             return;
                         };
 
-                        let mut editor = Editor::new(&mut self.value, &mut state.cursor);
-                        editor.paste(Value::new(text));
+                        let contents = edit_value(
+                            &mut self.value,
+                            &mut state.cursor,
+                            &mut state.history,
+                            EditKind::Other,
+                            |editor| editor.paste(Value::new(text)),
+                        );
 
                         focus.updated_at = Instant::now();
                         state.is_pasting = None;
 
-                        let message = (on_input)(editor.contents());
-                        shell.publish(message);
+                        shell.publish((on_input)(contents));
                         shell.capture_event();
 
                         update_cache(state, &self.value);
@@ -1311,8 +1962,14 @@ where
             Event::Window(window::Event::Unfocused) => {
                 let state = state::<Renderer>(tree);
 
+                state.history.break_group();
+
                 if let Some(focus) = &mut state.is_focused {
                     focus.is_window_focused = false;
+                }
+
+                if state.context_menu.take().is_some() {
+                    shell.request_redraw();
                 }
             }
             Event::Window(window::Event::Focused) => {
@@ -1334,8 +1991,7 @@ where
                     if matches!(state.cursor.state(&self.value), cursor::State::Index(_)) {
                         focus.now = *now;
 
-                        let millis_until_redraw = CURSOR_BLINK_INTERVAL_MILLIS
-                            - (*now - focus.updated_at).as_millis() % CURSOR_BLINK_INTERVAL_MILLIS;
+                        let millis_until_redraw = focus.millis_until_blink();
 
                         shell.request_redraw_at(
                             *now + Duration::from_millis(millis_until_redraw as u64),
@@ -1386,6 +2042,90 @@ where
         self.draw(tree, renderer, theme, layout, cursor, None, viewport);
     }
 
+    fn overlay<'b>(
+        &'b mut self,
+        tree: &'b mut Tree,
+        layout: Layout<'b>,
+        renderer: &Renderer,
+        _viewport: &Rectangle,
+        translation: Vector,
+    ) -> Option<overlay::Element<'b, Message, Theme, Renderer>> {
+        let state = tree.state.downcast_mut::<State<Renderer::Paragraph>>();
+
+        if state.context_menu.is_some() {
+            let style = menu::Style::new(self.theme, false);
+            return Some(overlay::Element::new(Box::new(ContextMenuOverlay {
+                host: TextInputContext { input: self, state },
+                style,
+                font: None,
+                translation,
+            })));
+        }
+
+        let font = self.font.unwrap_or_else(|| renderer.default_font());
+        let translate =
+            |rect: Rectangle| Rectangle::new(rect.position() + translation, rect.size());
+
+        // The eye button is icon-only, so spell out what it does.
+        if self.tooltips_enabled
+            && state.eye_hover.is_open()
+            && let Some(bounds) = self.eye_bounds(layout)
+        {
+            let label = if self.is_secure {
+                self.labels.show_password.clone()
+            } else {
+                self.labels.hide_password.clone()
+            };
+
+            return Some(tooltip::label_overlay(
+                translate(bounds),
+                label,
+                Some(font),
+                self.tooltip_style,
+                tooltip::Position::Above,
+                8.0,
+                tooltip::DEFAULT_MAX_WIDTH,
+                None,
+            ));
+        }
+
+        if self.tooltips_enabled
+            && state.clear_hover.is_open()
+            && let Some(bounds) = self.clear_bounds(layout)
+        {
+            let label = self.labels.clear.clone();
+
+            return Some(tooltip::label_overlay(
+                translate(bounds),
+                label,
+                Some(font),
+                self.tooltip_style,
+                tooltip::Position::Above,
+                8.0,
+                tooltip::DEFAULT_MAX_WIDTH,
+                None,
+            ));
+        }
+
+        if state.icon_hover.is_open()
+            && let Some(bounds) = self.icon_bounds(layout)
+            && let Some(label) = self.icon_tooltip.clone()
+        {
+            return Some(tooltip::label_overlay(
+                translate(bounds),
+                label,
+                Some(font),
+                self.tooltip_style,
+                tooltip::Position::Above,
+                8.0,
+                tooltip::DEFAULT_MAX_WIDTH,
+                None,
+            ));
+        }
+
+        None
+    }
+
     fn mouse_interaction(
         &self,
         _tree: &Tree,
@@ -1394,6 +2134,20 @@ where
         _viewport: &Rectangle,
         _renderer: &Renderer,
     ) -> mouse::Interaction {
+        if self
+            .eye_bounds(layout)
+            .is_some_and(|eye_bounds| cursor.is_over(eye_bounds))
+        {
+            return mouse::Interaction::Pointer;
+        }
+
+        if self
+            .clear_bounds(layout)
+            .is_some_and(|clear_bounds| cursor.is_over(clear_bounds))
+        {
+            return mouse::Interaction::Pointer;
+        }
+
         if cursor.is_over(layout.bounds()) {
             if self.on_input.is_none() {
                 mouse::Interaction::Idle
@@ -1406,19 +2160,15 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer> From<TextInput<'a, Message, Theme, Renderer>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    Message: Clone + 'a,
-    Theme: Catalog + 'a,
-    Renderer: text::Renderer + 'a,
-{
-    fn from(
-        text_input: TextInput<'a, Message, Theme, Renderer>,
-    ) -> Element<'a, Message, Theme, Renderer> {
-        Element::new(text_input)
-    }
-}
+crate::macros::impl_element_from!(
+    ['a, Message, Theme, Renderer]
+    TextInput<'a, Message, Theme, Renderer> => Element<'a, Message, Theme, Renderer>
+    where
+        Message: Clone + 'a,
+        Theme: Catalog + 'a,
+        Renderer: text::Renderer + svg::Renderer + 'a,
+        Renderer::Font: From<iced::Font>,
+);
 
 /// The content of the [`Icon`].
 #[derive(Debug, Clone)]
@@ -1458,18 +2208,18 @@ pub struct State<P: text::Paragraph> {
     last_click: Option<mouse::Click>,
     cursor: Cursor,
     keyboard_modifiers: keyboard::Modifiers,
+    eye_spring: Option<SpringValue<f32>>,
+    context_menu: Option<ContextMenu>,
+    text_bounds: Option<Rectangle>,
+    history: History,
+    eye_hover: tooltip::Hover,
+    clear_hover: tooltip::Hover,
+    icon_hover: tooltip::Hover,
     // TODO: Add stateful horizontal scrolling offset
 }
 
 fn state<Renderer: text::Renderer>(tree: &mut Tree) -> &mut State<Renderer::Paragraph> {
     tree.state.downcast_mut::<State<Renderer::Paragraph>>()
-}
-
-#[derive(Debug, Clone)]
-struct Focus {
-    updated_at: Instant,
-    now: Instant,
-    is_window_focused: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -1498,11 +2248,7 @@ impl<P: text::Paragraph> State<P> {
     pub fn focus(&mut self) {
         let now = Instant::now();
 
-        self.is_focused = Some(Focus {
-            updated_at: now,
-            now,
-            is_window_focused: true,
-        });
+        self.is_focused = Some(Focus::new(now));
 
         self.move_cursor_to_end();
     }
@@ -1510,30 +2256,34 @@ impl<P: text::Paragraph> State<P> {
     /// Unfocuses the [`TextInput`].
     pub fn unfocus(&mut self) {
         self.is_focused = None;
+        self.history.break_group();
     }
 
     /// Moves the [`Cursor`] of the [`TextInput`] to the front of the input text.
     pub fn move_cursor_to_front(&mut self) {
-        self.cursor.move_to(0);
+        self.move_cursor_to(0);
     }
 
     /// Moves the [`Cursor`] of the [`TextInput`] to the end of the input text.
     pub fn move_cursor_to_end(&mut self) {
-        self.cursor.move_to(usize::MAX);
+        self.move_cursor_to(usize::MAX);
     }
 
     /// Moves the [`Cursor`] of the [`TextInput`] to an arbitrary location.
     pub fn move_cursor_to(&mut self, position: usize) {
+        self.history.break_group();
         self.cursor.move_to(position);
     }
 
     /// Selects all the content of the [`TextInput`].
     pub fn select_all(&mut self) {
+        self.history.break_group();
         self.cursor.select_range(0, usize::MAX);
     }
 
     /// Selects the given range of the content of the [`TextInput`].
     pub fn select_range(&mut self, start: usize, end: usize) {
+        self.history.break_group();
         self.cursor.select_range(start, end);
     }
 }
@@ -1643,7 +2393,7 @@ fn find_cursor_position<P: text::Paragraph>(
 fn replace_paragraph<Renderer>(
     renderer: &Renderer,
     state: &mut State<Renderer::Paragraph>,
-    layout: Layout<'_>,
+    text_bounds: Option<Rectangle>,
     value: &Value,
     font: Option<Renderer::Font>,
     text_size: Option<Pixels>,
@@ -1654,14 +2404,13 @@ fn replace_paragraph<Renderer>(
     let font = font.unwrap_or_else(|| renderer.default_font());
     let text_size = text_size.unwrap_or_else(|| renderer.default_size());
 
-    let mut children_layout = layout.children();
-    let text_bounds = children_layout.next().unwrap().bounds();
+    let height = text_bounds.map_or(0.0, |text_bounds| text_bounds.height);
 
     state.value = paragraph::Plain::new(Text {
         font,
         line_height,
         content: value.to_string(),
-        bounds: Size::new(f32::INFINITY, text_bounds.height),
+        bounds: Size::new(f32::INFINITY, height),
         size: text_size,
         align_x: text::Alignment::Default,
         align_y: alignment::Vertical::Center,
@@ -1669,8 +2418,6 @@ fn replace_paragraph<Renderer>(
         wrapping: text::Wrapping::default(),
     });
 }
-
-const CURSOR_BLINK_INTERVAL_MILLIS: u128 = 500;
 
 /// The possible status of a [`TextInput`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1815,4 +2562,269 @@ fn convert_macos_shortcut(
     };
 
     Some(keyboard::Key::Named(named))
+}
+
+/// Adapts a [`TextInput`] and its [`State`] to the shared [`ContextMenuHost`].
+///
+/// This is what lets the generic context menu (see
+/// [`context_menu`](self::context_menu)) drive a [`TextInput`] the same way it
+/// drives the search field of a select widget.
+struct TextInputContext<'a, 'b, Message, Theme, Renderer>
+where
+    Theme: Catalog,
+    Renderer: text::Renderer + svg::Renderer,
+{
+    input: &'b mut TextInput<'a, Message, Theme, Renderer>,
+    state: &'b mut State<Renderer::Paragraph>,
+}
+
+impl<Message, Theme, Renderer> TextInputContext<'_, '_, Message, Theme, Renderer>
+where
+    Theme: Catalog,
+    Renderer: text::Renderer + svg::Renderer,
+{
+    fn touch_focus(&mut self) {
+        if let Some(focus) = &mut self.state.is_focused {
+            focus.updated_at = Instant::now();
+        }
+    }
+
+    fn update_cache(&mut self, renderer: &Renderer) {
+        let text_bounds = self.state.text_bounds;
+
+        replace_paragraph(
+            renderer,
+            self.state,
+            text_bounds,
+            &self.input.value,
+            self.input.font,
+            self.input.size,
+            self.input.line_height,
+        );
+    }
+
+    fn edit(
+        &mut self,
+        renderer: &Renderer,
+        is_paste: bool,
+        change: impl FnOnce(&mut Editor<'_>),
+    ) -> Option<Message> {
+        let callback = if is_paste {
+            self.input
+                .on_paste
+                .as_ref()
+                .or(self.input.on_input.as_ref())
+        } else {
+            self.input.on_input.as_ref()
+        }?;
+
+        let contents = edit_value(
+            &mut self.input.value,
+            &mut self.state.cursor,
+            &mut self.state.history,
+            EditKind::Other,
+            change,
+        );
+
+        let message = (callback)(contents);
+
+        self.state.is_pasting = None;
+        self.touch_focus();
+        self.update_cache(renderer);
+
+        Some(message)
+    }
+
+    fn history_action(&mut self, renderer: &Renderer, is_redo: bool) -> Option<Message> {
+        let on_input = self.input.on_input.as_ref()?;
+
+        let current = self.input.value.to_string();
+        let cursor = self.state.cursor;
+
+        let target = if is_redo {
+            self.state.history.redo(&current, cursor)
+        } else {
+            self.state.history.undo(&current, cursor)
+        }?;
+
+        self.input.value = Value::new(&target.value);
+        self.state.cursor = target.cursor;
+        self.state.is_pasting = None;
+
+        let message = (on_input)(target.value);
+
+        self.touch_focus();
+        self.update_cache(renderer);
+
+        Some(message)
+    }
+}
+
+impl<Message, Theme, Renderer> ContextMenuHost<Message, Renderer>
+    for TextInputContext<'_, '_, Message, Theme, Renderer>
+where
+    Theme: Catalog,
+    Renderer: text::Renderer + svg::Renderer,
+{
+    fn value(&self) -> &Value {
+        &self.input.value
+    }
+
+    fn cursor(&self) -> Cursor {
+        self.state.cursor
+    }
+
+    fn is_editable(&self) -> bool {
+        self.input.on_input.is_some()
+    }
+
+    fn is_secure(&self) -> bool {
+        self.input.is_secure
+    }
+
+    fn can_undo(&self) -> bool {
+        self.input.on_input.is_some() && self.state.history.can_undo()
+    }
+
+    fn can_redo(&self) -> bool {
+        self.input.on_input.is_some() && self.state.history.can_redo()
+    }
+
+    fn delete_selection(&mut self, renderer: &Renderer) -> Option<Message> {
+        self.state.cursor.selection(&self.input.value)?;
+
+        self.edit(renderer, false, |editor| editor.delete())
+    }
+
+    fn paste(&mut self, content: Value, renderer: &Renderer) -> Option<Message> {
+        self.edit(renderer, true, |editor| editor.paste(content))
+    }
+
+    fn undo(&mut self, renderer: &Renderer) -> Option<Message> {
+        self.history_action(renderer, false)
+    }
+
+    fn redo(&mut self, renderer: &Renderer) -> Option<Message> {
+        self.history_action(renderer, true)
+    }
+
+    fn select_word(&mut self) {
+        let position = self.state.cursor.end(&self.input.value);
+        let start = self.input.value.previous_start_of_word(position);
+        let end = self.input.value.next_end_of_word(position);
+
+        self.state.cursor.select_range(start, end);
+        self.touch_focus();
+    }
+
+    fn select_all(&mut self) {
+        self.state.cursor.select_all(&self.input.value);
+        self.touch_focus();
+    }
+
+    fn menu(&self) -> Option<ContextMenu> {
+        self.state.context_menu
+    }
+
+    fn set_menu(&mut self, menu: Option<ContextMenu>) {
+        self.state.context_menu = menu;
+    }
+
+    fn label(&self, action: Action) -> std::borrow::Cow<'_, str> {
+        std::borrow::Cow::Borrowed(self.input.labels.actions.get(action))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn history_groups_consecutive_typing() {
+        let cursor = Cursor::default();
+        let mut history = History::default();
+
+        history.record("", cursor, EditKind::Insert);
+        history.commit("h");
+        history.record("h", cursor, EditKind::Insert);
+        history.commit("he");
+        history.record("he", cursor, EditKind::Insert);
+        history.commit("hel");
+
+        let undone = history.undo("hel", cursor).expect("an undo step");
+
+        assert_eq!(undone.value, "");
+        assert!(history.undo("", cursor).is_none());
+    }
+
+    #[test]
+    fn history_undoes_and_redoes_separate_runs() {
+        let cursor = Cursor::default();
+        let mut history = History::default();
+
+        history.record("", cursor, EditKind::Insert);
+        history.commit("a");
+
+        history.break_group();
+
+        history.record("a", cursor, EditKind::Insert);
+        history.commit("ab");
+
+        let undone = history.undo("ab", cursor).expect("an undo step");
+        assert_eq!(undone.value, "a");
+
+        let redone = history.redo("a", cursor).expect("a redo step");
+        assert_eq!(redone.value, "ab");
+
+        assert!(history.redo("ab", cursor).is_none());
+    }
+
+    #[test]
+    fn history_does_not_group_other_edits() {
+        let cursor = Cursor::default();
+        let mut history = History::default();
+
+        history.record("", cursor, EditKind::Other);
+        history.commit("a");
+        history.record("a", cursor, EditKind::Other);
+        history.commit("ab");
+
+        let undone = history.undo("ab", cursor).expect("an undo step");
+
+        assert_eq!(undone.value, "a");
+    }
+
+    #[test]
+    fn history_forgets_redo_after_new_edit() {
+        let cursor = Cursor::default();
+        let mut history = History::default();
+
+        history.record("", cursor, EditKind::Insert);
+        history.commit("a");
+
+        let _ = history.undo("a", cursor).expect("an undo step");
+
+        history.record("", cursor, EditKind::Insert);
+
+        assert!(history.redo("", cursor).is_none());
+    }
+
+    #[test]
+    fn history_is_limited_in_size() {
+        let cursor = Cursor::default();
+        let mut history = History::default();
+
+        for i in 0..=MAX_UNDO_STEPS {
+            history.break_group();
+            history.record(&i.to_string(), cursor, EditKind::Insert);
+        }
+
+        let mut steps = 0;
+
+        while history.undo("", cursor).is_some() {
+            steps += 1;
+        }
+
+        assert_eq!(steps, MAX_UNDO_STEPS);
+    }
 }

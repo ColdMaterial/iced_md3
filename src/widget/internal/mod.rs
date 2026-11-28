@@ -1,1 +1,11 @@
+pub mod elide;
+pub mod focus;
+pub mod fuzzy;
+pub mod geometry;
+pub mod icon;
+pub mod interaction;
+pub mod motion;
 pub mod navigation_common;
+pub mod placement;
+pub mod scrollbar;
+pub mod text;

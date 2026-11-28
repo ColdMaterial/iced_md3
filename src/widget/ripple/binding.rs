@@ -1,4 +1,4 @@
-use std::time::Instant;
+use iced::time::Instant;
 
 use iced::{Event, Point, Rectangle, advanced::Shell, border::Radius, mouse, touch, window};
 use iced_widget::renderer::geometry;

@@ -1,4 +1,4 @@
-use std::time::Instant;
+use iced::time::Instant;
 
 use iced::{
     Border, Color, Element, Length, Shadow,
@@ -62,11 +62,7 @@ impl ProgressBar {
         self
     }
 
-    #[must_use]
-    pub fn progress_maybe(mut self, maybe_progress: Option<f32>) -> Self {
-        self.progress = maybe_progress;
-        self
-    }
+    crate::macros::maybe_assign!(progress_maybe, progress, Option<f32>);
 
     #[must_use]
     pub fn height(mut self, height: f32) -> Self {
@@ -74,11 +70,7 @@ impl ProgressBar {
         self
     }
 
-    #[must_use]
-    pub fn height_maybe(mut self, maybe_height: Option<f32>) -> Self {
-        self.height = maybe_height;
-        self
-    }
+    crate::macros::maybe_assign!(height_maybe, height, Option<f32>);
 }
 
 impl<Message> Widget<Message, iced::Theme, iced::Renderer> for ProgressBar {
@@ -257,8 +249,4 @@ impl<Message> Widget<Message, iced::Theme, iced::Renderer> for ProgressBar {
     }
 }
 
-impl<'a, Message> From<ProgressBar> for Element<'a, Message> {
-    fn from(progress: ProgressBar) -> Self {
-        Element::new(progress)
-    }
-}
+crate::macros::impl_element_from!(['a, Message] ProgressBar => Element<'a, Message>);

@@ -1,13 +1,17 @@
 use iced::{
     Border, Color, Element, Length, Padding, Point, Size,
     advanced::{Widget, layout::Node, mouse, widget::Tree},
-    touch,
 };
 
 use crate::{
+    macros::{impl_element_from, maybe_delegate},
     style::{DISABLED_STATE_LAYER_OPACITY, Elevation, StateLayer, shadow},
     theme::ColorScheme,
-    widget::{Action, ripple::Ripple},
+    widget::{
+        Action,
+        internal::interaction::{self, PressUpdate},
+        ripple::Ripple,
+    },
 };
 
 pub const MAX_CARD_BETWEEN_PADDING: f32 = 8.0;
@@ -130,13 +134,11 @@ where
         self
     }
 
-    #[must_use]
-    pub fn interaction_maybe(self, maybe_interaction: Option<Interaction<'a, Message>>) -> Self {
-        match maybe_interaction {
-            Some(interaction) => self.interaction(interaction),
-            None => self,
-        }
-    }
+    maybe_delegate!(
+        interaction_maybe,
+        interaction,
+        Option<Interaction<'a, Message>>
+    );
 
     #[must_use]
     pub fn width(mut self, width: impl Into<Length>) -> Self {
@@ -144,13 +146,7 @@ where
         self
     }
 
-    #[must_use]
-    pub fn width_maybe(self, maybe_width: Option<impl Into<Length>>) -> Self {
-        match maybe_width {
-            Some(width) => self.width(width),
-            None => self,
-        }
-    }
+    maybe_delegate!(width_maybe, width, Option<impl Into<Length>>);
 
     #[must_use]
     pub fn height(mut self, height: impl Into<Length>) -> Self {
@@ -158,13 +154,7 @@ where
         self
     }
 
-    #[must_use]
-    pub fn height_maybe(self, maybe_height: Option<impl Into<Length>>) -> Self {
-        match maybe_height {
-            Some(height) => self.height(height),
-            None => self,
-        }
-    }
+    maybe_delegate!(height_maybe, height, Option<impl Into<Length>>);
 
     #[must_use]
     pub fn padding(mut self, padding: impl Into<Padding>) -> Self {
@@ -172,13 +162,7 @@ where
         self
     }
 
-    #[must_use]
-    pub fn padding_maybe(self, maybe_padding: Option<impl Into<Padding>>) -> Self {
-        match maybe_padding {
-            Some(padding) => self.padding(padding),
-            None => self,
-        }
-    }
+    maybe_delegate!(padding_maybe, padding, Option<impl Into<Padding>>);
 }
 
 impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
@@ -352,50 +336,27 @@ where
         }
 
         let is_over = cursor.is_over(bounds);
+        let is_hovered = interaction::hovered(event, bounds, cursor);
 
-        match event {
-            iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) if is_over => {
+        match interaction::update_press(event, &mut state.is_pressed, true, is_hovered) {
+            PressUpdate::Pressed => {
                 shell.capture_event();
-                state.is_pressed = true;
                 shell.request_redraw();
             }
-            iced::Event::Touch(touch::Event::FingerPressed { position, .. })
-                if bounds.contains(*position) =>
-            {
-                shell.capture_event();
-                state.is_pressed = true;
-                shell.request_redraw();
-            }
-
-            iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
-                if state.is_pressed =>
-            {
-                shell.capture_event();
-                if is_over
-                    && let Interaction::Press(on_press) = &self.interaction
+            PressUpdate::Released => {
+                if let Interaction::Press(on_press) = &self.interaction
                     && let Some(on_press) = on_press
                 {
                     shell.publish(on_press.resolve());
                 }
-                state.is_pressed = false;
-                shell.request_redraw();
-            }
-            iced::Event::Touch(touch::Event::FingerLifted { position, .. }) if state.is_pressed => {
                 shell.capture_event();
-                if bounds.contains(*position)
-                    && let Interaction::Press(on_press) = &self.interaction
-                    && let Some(on_press) = on_press
-                {
-                    shell.publish(on_press.resolve());
-                }
-                state.is_pressed = false;
                 shell.request_redraw();
             }
-            iced::Event::Touch(touch::Event::FingerLost { .. }) => {
-                state.is_pressed = false;
+            PressUpdate::ReleasedOutside => {
+                shell.capture_event();
+                shell.request_redraw();
             }
-
-            _ => {}
+            PressUpdate::Lost | PressUpdate::Ignored => {}
         }
 
         if !is_over && !matches!(event, iced::Event::Touch(_)) {
@@ -439,14 +400,8 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer> From<Card<'a, Message, Theme, Renderer>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    Message: 'a + Clone,
-    Theme: 'a,
-    Renderer: 'a + iced_widget::renderer::geometry::Renderer,
-{
-    fn from(value: Card<'a, Message, Theme, Renderer>) -> Self {
-        Element::new(value)
-    }
-}
+impl_element_from!(
+    ['a, Message, Theme, Renderer]
+    Card<'a, Message, Theme, Renderer> => Element<'a, Message, Theme, Renderer>
+    where Message: 'a + Clone, Theme: 'a, Renderer: 'a + iced_widget::renderer::geometry::Renderer,
+);

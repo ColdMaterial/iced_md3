@@ -6,9 +6,9 @@ pub const EDGE_SPACING: f32 = 16.0;
 use crate::{
     style::Elevation,
     widget::{
-        Action,
         button::{self, CornerStyle},
         hybrid_icon::Icon,
+        tooltip,
     },
 };
 
@@ -72,7 +72,12 @@ impl Size {
         .into()
     }
 
-    fn button_size(&self, extended: bool, corner_style: CornerStyle) -> button::Size {
+    fn button_size(
+        &self,
+        extended: bool,
+        corner_style: CornerStyle,
+        label_size_scale: f32,
+    ) -> button::Size {
         let (padding, container_width) = match extended {
             true => (self.padding(), Length::Shrink),
             false => (0.0, Length::Fixed(self.container_height())),
@@ -83,7 +88,7 @@ impl Size {
             spacing: Pixels(self.content_spacing()),
             padding: padding::horizontal(padding),
             icon_size: self.icon_size(),
-            label_size: self.label_size(),
+            label_size: Pixels(self.label_size().0 * label_size_scale),
             corner_radius: button::CornerRadius {
                 style: corner_style,
                 shape_morph: false,
@@ -93,6 +98,12 @@ impl Size {
             },
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Tooltip {
+    pub style: tooltip::Style,
+    pub position: tooltip::Position,
 }
 
 #[derive(Clone)]
@@ -112,6 +123,14 @@ impl<'a> Content<'a> {
             Content::Reguar { icon } => icon,
             Content::Extended { icon, label: _ } => icon,
         }
+    }
+
+    pub fn extended(icon: Icon<'a>, label: text::Fragment<'a>) -> Self {
+        Content::Extended { icon, label }
+    }
+
+    pub fn regular(icon: Icon<'a>) -> Self {
+        Content::Reguar { icon }
     }
 
     pub fn with_label(&'a mut self, label: impl IntoFragment<'a>) -> Self {
@@ -135,12 +154,15 @@ pub struct Fab<'a, Message>
 where
     Message: 'a + Clone,
 {
-    content: Content<'a>,
-    size: Size,
-    corner_style: CornerStyle,
-    style: Style,
-    label_font: Option<Font>,
-    on_press: Action<'a, Message>,
+    pub content: Content<'a>,
+    pub size: Size,
+    pub corner_style: CornerStyle,
+    pub style: Style,
+    pub label_font: Option<Font>,
+    pub label_size_scale: f32,
+    pub on_press: Message,
+    /// Optional tooltip shown when the FAB is hovered.
+    pub tooltip: Option<(text::Fragment<'a>, Tooltip)>,
 }
 
 impl<'a, Message> Fab<'a, Message>
@@ -148,14 +170,16 @@ where
     Message: 'a + Clone,
 {
     #[must_use]
-    pub fn new(style: Style, content: Content<'a>, on_press: Action<'a, Message>) -> Self {
+    pub fn new(style: Style, content: Content<'a>, on_press: Message) -> Self {
         Self {
             content,
             size: Size::default(),
             corner_style: CornerStyle::Square,
             style,
             label_font: None,
+            label_size_scale: 1.0,
             on_press,
+            tooltip: None,
         }
     }
 
@@ -165,13 +189,7 @@ where
         self
     }
 
-    #[must_use]
-    pub fn size_maybe(self, maybe_size: Option<Size>) -> Self {
-        match maybe_size {
-            Some(size) => self.size(size),
-            None => self,
-        }
-    }
+    crate::macros::maybe_delegate!(size_maybe, size, Option<Size>);
 
     #[must_use]
     pub fn label_font(mut self, label_font: Font) -> Self {
@@ -179,22 +197,51 @@ where
         self
     }
 
-    #[must_use]
-    pub fn label_font_maybe(mut self, maybe_label_font: Option<Font>) -> Self {
-        self.label_font = maybe_label_font;
-        self
-    }
+    crate::macros::maybe_assign!(label_font_maybe, label_font, Option<Font>);
 
     #[must_use]
     pub fn corner_style(mut self, corner_style: CornerStyle) -> Self {
         self.corner_style = corner_style;
         self
     }
+
+    #[must_use]
+    pub fn label_size_scale(mut self, scale: f32) -> Self {
+        self.label_size_scale = scale;
+        self
+    }
+
+    /// Shows a tooltip with `label` when the [`Fab`] is hovered.
+    #[must_use]
+    pub fn tooltip(mut self, label: impl IntoFragment<'a>, config: Tooltip) -> Self {
+        self.tooltip = Some((label.into_fragment(), config));
+        self
+    }
+
+    pub fn set_label_size_scale(&mut self, scale: f32) {
+        self.label_size_scale = scale;
+    }
+}
+
+impl<'a, Message: 'a + Clone> Clone for Fab<'a, Message> {
+    fn clone(&self) -> Self {
+        Self {
+            content: self.content.clone(),
+            size: self.size,
+            corner_style: self.corner_style,
+            style: self.style,
+            label_font: self.label_font,
+            label_size_scale: self.label_size_scale,
+            on_press: self.on_press.clone(),
+            tooltip: self.tooltip.clone(),
+        }
+    }
 }
 
 impl<'a, Message, Theme, Renderer> From<Fab<'a, Message>> for Element<'a, Message, Theme, Renderer>
 where
     Message: 'a + Clone,
+    Theme: 'a,
     Renderer: 'a
         + iced::advanced::text::Renderer
         + iced::advanced::svg::Renderer
@@ -205,13 +252,22 @@ where
         let is_extended_fab = matches!(value.content, Content::Extended { icon: _, label: _ });
         let button = crate::widget::button(value.style, value.content.into())
             .label_font_maybe(value.label_font)
-            .size(value.size.button_size(is_extended_fab, value.corner_style))
+            .size(value.size.button_size(
+                is_extended_fab,
+                value.corner_style,
+                value.label_size_scale,
+            ))
             .elevation(Elevation::Level3);
 
-        match value.on_press {
-            Action::Direct(on_press) => button.on_press(on_press),
-            Action::Closure(on_press) => button.on_press_with(on_press),
+        let button: Element<'a, Message, Theme, Renderer> = button.on_press(value.on_press).into();
+
+        if let Some((label, config)) = value.tooltip {
+            crate::widget::tooltip(config.style, button)
+                .label(label)
+                .position(config.position)
+                .into()
+        } else {
+            button
         }
-        .into()
     }
 }

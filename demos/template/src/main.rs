@@ -1,5 +1,5 @@
 use iced::{
-    Element, Font, Length, Task,
+    Element, Length, Task,
     widget::{container, text},
 };
 use iced_m3::theme::{ColorScheme, Mode, Theme};
@@ -42,21 +42,5 @@ impl State {
 }
 
 fn main() -> iced::Result {
-    iced::application(
-        || {
-            (
-                State::default(),
-                Task::batch(
-                    fonts::get_fonts()
-                        .into_iter()
-                        .map(|b| iced::font::load(b).discard()),
-                ),
-            )
-        },
-        State::update,
-        State::view,
-    )
-    .title(APP_NAME)
-    .default_font(Font::with_name("Noto Sans"))
-    .run()
+    common::run_custom(APP_NAME, State::default, State::update, State::view)
 }
